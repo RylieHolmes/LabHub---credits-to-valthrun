@@ -19,7 +19,6 @@ pub use self::imgui::*;
 mod console_io;
 pub use console_io::*;
 
-// ADDED: This line makes the code in `fs.rs` available to the rest of the project.
 mod fs;
 pub use fs::*;
 

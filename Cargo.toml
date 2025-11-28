@@ -37,6 +37,8 @@ debug = false
 [profile.release]
 panic = "abort"
 lto = true
+strip = true
+codegen-units = 1
 
 [workspace.dependencies]
 raw_struct = { version = "0.1.3" }

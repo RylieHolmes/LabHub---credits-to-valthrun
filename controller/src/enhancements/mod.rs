@@ -1,5 +1,3 @@
-// controller/src/enhancements/mod.rs
-
 use crate::settings::AppSettings;
 use crate::UpdateContext;
 use overlay::UnicodeTextRenderer;
@@ -49,6 +47,15 @@ pub use aim::*;
 mod grenade_helper;
 pub use grenade_helper::*;
 
-// MODIFICATION: Declare the module first, then make its contents public.
 mod sniper_crosshair;
 pub use sniper_crosshair::*;
+
+// ADDED: New module for grenade trajectories
+mod grenade_trajectory;
+pub use grenade_trajectory::*;
+
+// ADDED: Map parser for physics
+pub mod map_loader;
+
+mod legit_aim;
+pub use legit_aim::*;

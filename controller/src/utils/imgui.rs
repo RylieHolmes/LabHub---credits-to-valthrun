@@ -197,12 +197,21 @@ impl ImguiComboEnum for imgui::Ui {
             entry.1.into()
         }
 
-        if self.combo(label, &mut type_index, values, &display_name) {
+        // Apply rounded corners and remove borders for both button and popup menu
+        let _border_size = self.push_style_var(imgui::StyleVar::FrameBorderSize(0.0));
+        let _rounding = self.push_style_var(imgui::StyleVar::FrameRounding(5.0));
+        let _popup_border_size = self.push_style_var(imgui::StyleVar::PopupBorderSize(0.0));
+        let _popup_rounding = self.push_style_var(imgui::StyleVar::PopupRounding(5.0));
+
+        let result = if self.combo(label, &mut type_index, values, &display_name) {
             *value = values[type_index].0;
             true
         } else {
             false
-        }
+        };
+
+        // Style guards automatically pop when they go out of scope
+        result
     }
 }
 
@@ -280,4 +289,29 @@ mod hotkey {
 
         updated
     }
+}
+
+pub fn render_styled_panel<F>(ui: &imgui::Ui, id: &str, pos: [f32; 2], content: F)
+where
+    F: FnOnce(),
+{
+    let _style_color = ui.push_style_color(imgui::StyleColor::WindowBg, [0.06, 0.05, 0.07, 0.90]);
+    let _style_border = ui.push_style_color(imgui::StyleColor::Border, [0.80, 0.80, 0.83, 0.50]);
+    let _style_rounding = ui.push_style_var(imgui::StyleVar::WindowRounding(5.0));
+    let _style_padding = ui.push_style_var(imgui::StyleVar::WindowPadding([10.0, 8.0]));
+    let _style_border_size = ui.push_style_var(imgui::StyleVar::WindowBorderSize(1.0));
+
+    ui.window(id)
+        .flags(
+            imgui::WindowFlags::ALWAYS_AUTO_RESIZE | 
+            imgui::WindowFlags::NO_DECORATION | 
+            imgui::WindowFlags::NO_MOVE | 
+            imgui::WindowFlags::NO_INPUTS |
+            imgui::WindowFlags::NO_NAV |
+            imgui::WindowFlags::NO_FOCUS_ON_APPEARING
+        )
+        .position(pos, imgui::Condition::Always)
+        .build(|| {
+            content();
+        });
 }

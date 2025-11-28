@@ -41,7 +41,7 @@ impl State for StateEntityList {
     }
 
     fn cache_type() -> StateCacheType {
-        StateCacheType::Persistent
+        StateCacheType::Volatile
     }
 
     fn update(&mut self, states: &StateRegistry) -> anyhow::Result<()> {

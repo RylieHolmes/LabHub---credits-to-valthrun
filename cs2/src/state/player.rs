@@ -228,14 +228,19 @@ impl State for StatePawnInfo {
 #[derive(Debug, Clone)]
 pub struct BoneStateData {
     pub position: nalgebra::Vector3<f32>,
+    pub rotation: nalgebra::Quaternion<f32>,
 }
 
 impl TryFrom<&dyn CBoneStateData> for BoneStateData {
     type Error = anyhow::Error;
 
     fn try_from(value: &dyn CBoneStateData) -> Result<Self, Self::Error> {
+        let rot = value.rotation()?;
+        // Source 2 Quaternions are usually [x, y, z, w]
+        // nalgebra::Quaternion::new takes (w, x, y, z)
         Ok(Self {
             position: nalgebra::Vector3::from_row_slice(&value.position()?),
+            rotation: nalgebra::Quaternion::new(rot[3], rot[0], rot[1], rot[2]),
         })
     }
 }

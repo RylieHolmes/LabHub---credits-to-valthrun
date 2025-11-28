@@ -1,0 +1,330 @@
+   Compiling controller v0.5.15 (C:\Users\rylie\Desktop\CODE PROJECTS\CS2 COMPLETED\cs2-main\controller)
+warning: unused import: `internal::RawWrapper`
+ --> overlay\src\directx\mod.rs:3:5
+  |
+3 |     internal::RawWrapper,
+  |     ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `overlay` (lib) generated 1 warning (run `cargo fix --lib -p overlay` to apply 1 suggestion)
+error[E0425]: cannot find value `label` in this scope
+   --> controller\src\settings\ui.rs:952:41
+    |
+952 |             &format!("##{}_color_type", label),
+    |                                         ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `color_type` in this scope
+   --> controller\src\settings\ui.rs:959:18
+    |
+959 |             &mut color_type,
+    |                  ^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `color` in this scope
+   --> controller\src\settings\ui.rs:967:14
+    |
+967 |             *color = match color_type {
+    |              ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `color_type` in this scope
+   --> controller\src\settings\ui.rs:967:28
+    |
+967 |             *color = match color_type {
+    |                            ^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `color` in this scope
+   --> controller\src\settings\ui.rs:978:15
+    |
+978 |         match color {
+    |               ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `label` in this scope
+   --> controller\src\settings\ui.rs:981:72
+    |
+981 | ...   if ui.color_edit4_config(&format!("##{}_static_value", label), &mut color_value).alpha_bar(true).inputs(false).label(false).build() {
+    |                                                              ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `label` in this scope
+   --> controller\src\settings\ui.rs:989:65
+    |
+989 |                 ui.slider_config(&format!("##{}_rainbow_alpha", label), 0.1, 1.0).display_format("%.2f").build(alpha);
+    |                                                                 ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `label` in this scope
+   --> controller\src\settings\ui.rs:993:70
+    |
+993 | ...   if ui.color_edit4_config(&format!("##{}_health_max", label), &mut max_value).alpha_bar(true).inputs(false).label(false).build() { *...
+    |                                                            ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `label` in this scope
+   --> controller\src\settings\ui.rs:996:70
+    |
+996 | ...   if ui.color_edit4_config(&format!("##{}_health_mid", label), &mut mid_value).alpha_bar(true).inputs(false).label(false).build() { *...
+    |                                                            ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `label` in this scope
+   --> controller\src\settings\ui.rs:999:70
+    |
+999 | ...   if ui.color_edit4_config(&format!("##{}_health_min", label), &mut min_value).alpha_bar(true).inputs(false).label(false).build() { *...
+    |                                                            ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `label` in this scope
+    --> controller\src\settings\ui.rs:1003:64
+     |
+1003 | ...   if ui.color_edit4_config(&format!("##{}_near", label), &mut near_color).alpha_bar(true).inputs(false).label(false).build() { *near ...
+     |                                                      ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `label` in this scope
+    --> controller\src\settings\ui.rs:1006:63
+     |
+1006 | ...   if ui.color_edit4_config(&format!("##{}_mid", label), &mut mid_color).alpha_bar(true).inputs(false).label(false).build() { *mid = C...
+     |                                                     ^^^^^ not found in this scope
+
+error[E0425]: cannot find value `label` in this scope
+    --> controller\src\settings\ui.rs:1009:63
+     |
+1009 | ...   if ui.color_edit4_config(&format!("##{}_far", label), &mut far_color).alpha_bar(true).inputs(false).label(false).build() { *far = C...
+     |                                                     ^^^^^ not found in this scope
+
+warning: unused import: `Unit`
+  --> controller\src\enhancements\grenade_trajectory.rs:23:25
+   |
+23 | use nalgebra::{Vector3, Unit};
+   |                         ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Read`
+   --> controller\src\enhancements\map_loader.rs:379:31
+    |
+379 |         use std::io::{Cursor, Read, Write};
+    |                               ^^^^
+
+warning: unused import: `Image`
+  --> controller\src\settings\ui.rs:18:5
+   |
+18 |     Image,
+   |     ^^^^^
+
+warning: unused import: `config_manager::*`
+  --> controller\src\settings\mod.rs:12:9
+   |
+12 | pub use config_manager::*;
+   |         ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `fs::*`
+  --> controller\src\utils\mod.rs:24:9
+   |
+24 | pub use fs::*;
+   |         ^^^^^
+
+warning: unused import: `C_CSPlayerPawnBase`
+  --> controller\src\view\crosshair.rs:12:5
+   |
+12 |     C_CSPlayerPawnBase,
+   |     ^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no function or associated item named `render_esp_settings_player_style_color` found for struct `ui::SettingsUI` in the current scope
+   --> controller\src\settings\ui.rs:878:23
+    |
+110 | pub struct SettingsUI {
+    | --------------------- function or associated item `render_esp_settings_player_style_color` not found for this struct
+...
+878 |                 Self::render_esp_settings_player_style_color(ui, "Color", &mut player_config.box_color);
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ui::SettingsUI`
+    |
+note: if you're trying to build a new `ui::SettingsUI`, consider using `ui::SettingsUI::new` which returns `ui::SettingsUI`
+   --> controller\src\settings\ui.rs:130:5
+    |
+130 |     pub fn new() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+help: there is a method `render_esp_settings_player` with a similar name, but with different arguments
+   --> controller\src\settings\ui.rs:790:5
+    |
+790 | /     fn render_esp_settings_player(
+791 | |         &mut self,
+792 | |         app: &Application,
+793 | |         settings: &mut AppSettings,
+794 | |         ui: &imgui::Ui,
+795 | |         target: EspSelector,
+796 | |     ) {
+    | |_____^
+
+error[E0599]: no function or associated item named `render_esp_settings_player_style_color` found for struct `ui::SettingsUI` in the current scope
+   --> controller\src\settings\ui.rs:886:23
+    |
+110 | pub struct SettingsUI {
+    | --------------------- function or associated item `render_esp_settings_player_style_color` not found for this struct
+...
+886 |                 Self::render_esp_settings_player_style_color(ui, "Color", &mut player_config.skeleton_color);
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ui::SettingsUI`
+    |
+note: if you're trying to build a new `ui::SettingsUI`, consider using `ui::SettingsUI::new` which returns `ui::SettingsUI`
+   --> controller\src\settings\ui.rs:130:5
+    |
+130 |     pub fn new() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+help: there is a method `render_esp_settings_player` with a similar name, but with different arguments
+   --> controller\src\settings\ui.rs:790:5
+    |
+790 | /     fn render_esp_settings_player(
+791 | |         &mut self,
+792 | |         app: &Application,
+793 | |         settings: &mut AppSettings,
+794 | |         ui: &imgui::Ui,
+795 | |         target: EspSelector,
+796 | |     ) {
+    | |_____^
+
+error[E0599]: no function or associated item named `render_esp_settings_player_style_color` found for struct `ui::SettingsUI` in the current scope
+   --> controller\src\settings\ui.rs:904:23
+    |
+110 | pub struct SettingsUI {
+    | --------------------- function or associated item `render_esp_settings_player_style_color` not found for this struct
+...
+904 |                 Self::render_esp_settings_player_style_color(ui, "Color", &mut player_config.head_dot_color);
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ui::SettingsUI`
+    |
+note: if you're trying to build a new `ui::SettingsUI`, consider using `ui::SettingsUI::new` which returns `ui::SettingsUI`
+   --> controller\src\settings\ui.rs:130:5
+    |
+130 |     pub fn new() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+help: there is a method `render_esp_settings_player` with a similar name, but with different arguments
+   --> controller\src\settings\ui.rs:790:5
+    |
+790 | /     fn render_esp_settings_player(
+791 | |         &mut self,
+792 | |         app: &Application,
+793 | |         settings: &mut AppSettings,
+794 | |         ui: &imgui::Ui,
+795 | |         target: EspSelector,
+796 | |     ) {
+    | |_____^
+
+error[E0599]: no function or associated item named `render_esp_settings_player_style_color` found for struct `ui::SettingsUI` in the current scope
+   --> controller\src\settings\ui.rs:922:23
+    |
+110 | pub struct SettingsUI {
+    | --------------------- function or associated item `render_esp_settings_player_style_color` not found for this struct
+...
+922 |                 Self::render_esp_settings_player_style_color(ui, "Color", &mut player_config.tracer_lines_color);
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ui::SettingsUI`
+    |
+note: if you're trying to build a new `ui::SettingsUI`, consider using `ui::SettingsUI::new` which returns `ui::SettingsUI`
+   --> controller\src\settings\ui.rs:130:5
+    |
+130 |     pub fn new() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+help: there is a method `render_esp_settings_player` with a similar name, but with different arguments
+   --> controller\src\settings\ui.rs:790:5
+    |
+790 | /     fn render_esp_settings_player(
+791 | |         &mut self,
+792 | |         app: &Application,
+793 | |         settings: &mut AppSettings,
+794 | |         ui: &imgui::Ui,
+795 | |         target: EspSelector,
+796 | |     ) {
+    | |_____^
+
+error[E0599]: no function or associated item named `render_esp_settings_player_style_color` found for struct `ui::SettingsUI` in the current scope
+   --> controller\src\settings\ui.rs:940:23
+    |
+110 | pub struct SettingsUI {
+    | --------------------- function or associated item `render_esp_settings_player_style_color` not found for this struct
+...
+940 |                 Self::render_esp_settings_player_style_color(ui, "Color", &mut player_config.info_hp_text_color);
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ui::SettingsUI`
+    |
+note: if you're trying to build a new `ui::SettingsUI`, consider using `ui::SettingsUI::new` which returns `ui::SettingsUI`
+   --> controller\src\settings\ui.rs:130:5
+    |
+130 |     pub fn new() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+help: there is a method `render_esp_settings_player` with a similar name, but with different arguments
+   --> controller\src\settings\ui.rs:790:5
+    |
+790 | /     fn render_esp_settings_player(
+791 | |         &mut self,
+792 | |         app: &Application,
+793 | |         settings: &mut AppSettings,
+794 | |         ui: &imgui::Ui,
+795 | |         target: EspSelector,
+796 | |     ) {
+    | |_____^
+
+error[E0599]: no function or associated item named `render_esp_settings_player_style_color` found for struct `ui::SettingsUI` in the current scope
+   --> controller\src\settings\ui.rs:945:233
+    |
+110 | pub struct SettingsUI {
+    | --------------------- function or associated item `render_esp_settings_player_style_color` not found for this struct
+...
+945 |         ui.modal_popup_config(POPUP_NAME).always_auto_resize(true).save_settings(false).build(|| { ui.separator(); if let Some(_t) = ui.begin_table_with_sizing("name_settings", 1, imgui::TableFlags::empty(), [0.0,0.0], 0.0) { Self::render_esp_settings_player_style_color(ui...
+    |                                                                                                                                                                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ui::SettingsUI`
+    |
+note: if you're trying to build a new `ui::SettingsUI`, consider using `ui::SettingsUI::new` which returns `ui::SettingsUI`
+   --> controller\src\settings\ui.rs:130:5
+    |
+130 |     pub fn new() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+help: there is a method `render_esp_settings_player` with a similar name, but with different arguments
+   --> controller\src\settings\ui.rs:790:5
+    |
+790 | /     fn render_esp_settings_player(
+791 | |         &mut self,
+792 | |         app: &Application,
+793 | |         settings: &mut AppSettings,
+794 | |         ui: &imgui::Ui,
+795 | |         target: EspSelector,
+796 | |     ) {
+    | |_____^
+
+error[E0599]: no function or associated item named `render_esp_settings_player_style_color` found for struct `ui::SettingsUI` in the current scope
+   --> controller\src\settings\ui.rs:946:237
+    |
+110 | pub struct SettingsUI {
+    | --------------------- function or associated item `render_esp_settings_player_style_color` not found for this struct
+...
+946 |         ui.modal_popup_config(POPUP_WEAPON).always_auto_resize(true).save_settings(false).build(|| { ui.separator(); if let Some(_t) = ui.begin_table_with_sizing("weapon_settings", 1, imgui::TableFlags::empty(), [0.0,0.0], 0.0) { Self::render_esp_settings_player_style_color(ui...
+    |                                                                                                                                                                                                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ui::SettingsUI`
+    |
+note: if you're trying to build a new `ui::SettingsUI`, consider using `ui::SettingsUI::new` which returns `ui::SettingsUI`
+   --> controller\src\settings\ui.rs:130:5
+    |
+130 |     pub fn new() -> Self {
+    |     ^^^^^^^^^^^^^^^^^^^^
+help: there is a method `render_esp_settings_player` with a similar name, but with different arguments
+   --> controller\src\settings\ui.rs:790:5
+    |
+790 | /     fn render_esp_settings_player(
+791 | |         &mut self,
+792 | |         app: &Application,
+793 | |         settings: &mut AppSettings,
+794 | |         ui: &imgui::Ui,
+795 | |         target: EspSelector,
+796 | |     ) {
+    | |_____^
+
+warning: variable does not need to be mutable
+   --> controller\src\enhancements\map_loader.rs:275:25
+    |
+275 |     fn build_linear_bvh(mut triangles: Vec<Triangle>) -> (Vec<Triangle>, Vec<LinearNode>) {
+    |                         ----^^^^^^^^^
+    |                         |
+    |                         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `a`
+   --> controller\src\settings\config.rs:139:69
+    |
+139 |             Self::AlphabeticalReverse => { values.sort_unstable_by(|a, b| b.name.cmp(&b.name)); }
+    |                                                                     ^ help: if this is intentional, prefix it with an underscore: `_a`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+Some errors have detailed explanations: E0425, E0599.
+For more information about an error, try `rustc --explain E0425`.
+warning: `controller` (bin "controller") generated 8 warnings
+error: could not compile `controller` (bin "controller") due to 20 previous errors; 8 warnings emitted

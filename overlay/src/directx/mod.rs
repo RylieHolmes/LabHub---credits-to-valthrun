@@ -1,8 +1,5 @@
 use std::collections::HashMap;
-use imgui::{
-    internal::RawWrapper,
-    TextureId,
-};
+use imgui::TextureId;
 use imgui_winit_support::winit::window::Window;
 use windows::Win32::{
     Foundation::{

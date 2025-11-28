@@ -1,8 +1,9 @@
-// controller\src\main.rs
+// controller/src/main.rs
+
+#![windows_subsystem = "windows"] 
 
 use image::GenericImageView;
 use imgui::TextureId;
-
 use std::{
     cell::{
         Ref,
@@ -24,8 +25,8 @@ use std::{
         Duration,
         Instant,
     },
+    collections::HashMap,
 };
-
 use anyhow::Context;
 use clap::Parser;
 use cs2::{
@@ -67,13 +68,16 @@ use settings::{
 };
 use tokio::runtime;
 use utils::show_critical_error;
-use utils_state::StateRegistry;
+use utils_state::{StateRegistry, State, StateCacheType};
 use view::ViewController;
 use windows::Win32::UI::Shell::IsUserAnAdmin;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState,
     VIRTUAL_KEY,
 };
+
+use tiny_skia::Pixmap;
+
 use crate::{
     enhancements::{
         AntiAimPunsh,
@@ -83,6 +87,8 @@ use crate::{
         SpectatorsListIndicator,
         TriggerBot,
         SniperCrosshair,
+        GrenadeTrajectory,
+        LegitAim,
     },
     settings::{
         save_app_settings,
@@ -91,36 +97,31 @@ use crate::{
     utils::TextWithShadowUi,
     winver::version_info,
 };
-use renderer_3d::Renderer3D;
-
 mod dialog;
 mod enhancements;
-mod renderer_3d;
 mod settings;
 mod utils;
 mod view;
 mod winver;
+// --- ADDED SECURITY MODULE ---
+mod security;
 
 pub trait MetricsClient {
     fn add_metrics_record(&self, record_type: &str, record_payload: &str);
 }
-
 impl MetricsClient for CS2Handle {
     fn add_metrics_record(&self, record_type: &str, record_payload: &str) {
         self.add_metrics_record(record_type, record_payload)
     }
 }
-
 pub trait KeyboardInput {
     fn is_key_down(&self, key: imgui::Key) -> bool;
     fn is_key_pressed(&self, key: imgui::Key, repeating: bool) -> bool;
 }
-
 impl KeyboardInput for imgui::Ui {
     fn is_key_down(&self, key: imgui::Key) -> bool {
         Ui::is_key_down(self, key)
     }
-
     fn is_key_pressed(&self, key: imgui::Key, repeating: bool) -> bool {
         if repeating {
             Ui::is_key_pressed(self, key)
@@ -152,24 +153,39 @@ impl FontReference {
 
 #[derive(Clone, Default)]
 pub struct AppFonts {
-    labh: FontReference,
-    title: FontReference,
+    pub labh: FontReference,
+    pub title: FontReference,
+    pub intro: FontReference, 
 }
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct AppResources {
-    pub cog_texture_id: Option<TextureId>,
+    pub weapon_icons: HashMap<String, TextureId>,
     pub character_texture: Option<(TextureId, (u32, u32))>,
-    pub esp_box_texture_id: Option<TextureId>,
-    pub esp_skeleton_texture_id: Option<TextureId>,
-    pub esp_health_bar_texture_id: Option<TextureId>,
-    pub esp_head_dot_texture_id: Option<TextureId>,
+    pub cog_texture_id: Option<TextureId>,
+    pub esp_preview_skeleton_texture_id: Option<(TextureId, (u32, u32))>,
+    pub esp_preview_head_texture_id: Option<(TextureId, (u32, u32))>,
+    pub esp_preview_health_lr_texture_id: Option<(TextureId, (u32, u32))>,
+    pub esp_preview_health_bt_texture_id: Option<(TextureId, (u32, u32))>,
+    pub esp_preview_name_texture_id: Option<(TextureId, (u32, u32))>,
+    pub esp_preview_gun_texture_id: Option<(TextureId, (u32, u32))>,
+    pub esp_preview_distance_texture_id: Option<(TextureId, (u32, u32))>,
+    pub esp_preview_ammo_texture_id: Option<(TextureId, (u32, u32))>,
+    pub esp_preview_box_texture_id: Option<(TextureId, (u32, u32))>,
+    pub cs2: Arc<CS2Handle>,
+}
+
+impl State for AppResources {
+    type Parameter = ();
+
+    fn cache_type() -> StateCacheType {
+        StateCacheType::Persistent
+    }
 }
 
 pub struct Application {
     pub fonts: AppFonts,
     pub resources: AppResources,
-    pub renderer_3d: Renderer3D,
     pub app_state: StateRegistry,
     pub cs2: Arc<CS2Handle>,
     pub enhancements: Vec<Rc<RefCell<dyn Enhancement>>>,
@@ -190,7 +206,6 @@ impl Application {
     pub fn settings(&self) -> Ref<'_, AppSettings> {
         self.app_state.get::<AppSettings>(()).expect("app settings to be present")
     }
-
     pub fn settings_mut(&self) -> RefMut<'_, AppSettings> {
         self.app_state.get_mut::<AppSettings>(()).expect("app settings to be present")
     }
@@ -256,13 +271,19 @@ impl Application {
     }
 
     pub fn update(&mut self, ui: &imgui::Ui) -> anyhow::Result<()> {
+        if self.app_state.resolve::<ViewController>(()).is_err() {
+            self.app_state.invalidate_states();
+            return Ok(());
+        }
+
         for enhancement in self.enhancements.iter() {
             let mut hack = enhancement.borrow_mut();
-            if hack.update_settings(ui, &mut *self.settings_mut())? { self.settings_dirty = true; }
+            if hack.update_settings(ui, &mut *self.settings_mut())? {
+                self.settings_dirty = true;
+            }
         }
 
         let menu_key = self.settings().key_settings.0;
-
         let vk_menu_key = map_imgui_key_to_vk(menu_key);
         let menu_key_is_down = if vk_menu_key.0 != 0 {
             unsafe { (GetAsyncKeyState(vk_menu_key.0 as i32) as u16 & 0x8000) != 0 }
@@ -273,19 +294,31 @@ impl Application {
         if menu_key_is_down && !self.menu_key_was_down {
             log::debug!("Toggle settings");
             self.settings_visible = !self.settings_visible;
-            self.settings_visibility_changed.store(true, Ordering::Relaxed);
-            self.cs2.add_metrics_record("settings-toggled", &format!("visible: {}", self.settings_visible));
+            self.settings_visibility_changed
+                .store(true, Ordering::Relaxed);
+            self.cs2.add_metrics_record(
+                "settings-toggled",
+                &format!("visible: {}", self.settings_visible),
+            );
 
-            if !self.settings_visible { self.settings_dirty = true; }
+            if !self.settings_visible {
+                self.settings_dirty = true;
+            }
         }
         self.menu_key_was_down = menu_key_is_down;
 
         self.app_state.invalidate_states();
+
         if let Ok(mut view_controller) = self.app_state.resolve_mut::<ViewController>(()) {
             view_controller.update_screen_bounds(mint::Vector2::from_slice(&ui.io().display_size));
+            view_controller.update(&self.app_state)?;
         }
 
-        let update_context = UpdateContext { cs2: &self.cs2, states: &self.app_state, input: ui };
+        let update_context = UpdateContext {
+            cs2: &self.cs2,
+            states: &self.app_state,
+            input: ui,
+        };
 
         for enhancement in self.enhancements.iter() {
             let mut enhancement = enhancement.borrow_mut();
@@ -324,17 +357,17 @@ impl Application {
         let mut settings = self.settings_mut();
         let display_size = ui.io().display_size;
         ui.window("##warning_insert_key").movable(false).collapsible(false).always_auto_resize(true).position([display_size[0] * 0.5, display_size[1] * 0.5], Condition::Always).position_pivot([0.5, 0.5]).build(|| {
-            ui.text("We detected you pressed the \"INSERT\" key.");
-            ui.text("If you meant to open the LABH Overlay please use the \"PAUSE\" key.");
+            ui.text(obfstr!("We detected you pressed the \"INSERT\" key."));
+            ui.text(obfstr!("If you meant to open the LABH Overlay please use the \"PAUSE\" key."));
             ui.dummy([0.0, 2.5]);
             ui.separator();
             ui.dummy([0.0, 2.5]);
 
             ui.set_next_item_width(ui.content_region_avail()[0]);
-            ui.checkbox("Do not show this warning again", &mut settings.key_settings_ignore_insert_warning);
+            ui.checkbox(obfstr!("Do not show this warning again"), &mut settings.key_settings_ignore_insert_warning);
 
             ui.dummy([0.0, 2.5]);
-            if ui.button("Bind to INSERT") {
+            if ui.button(obfstr!("Bind to INSERT")) {
                 settings.key_settings = HotKey(Key::Insert);
                 *popup_visible = false;
             }
@@ -349,25 +382,26 @@ impl Application {
         let window_size = ui.window_size();
 
         if settings.labh_watermark {
-            {
-                let text_buf;
-                let text = obfstr!(text_buf = "LABH Overlay");
-                let text_size = ui.calc_text_size(text);
-                ui.set_cursor_pos([window_size[0] - text_size[0] - 10.0, 10.0]);
-                ui.text_with_shadow(text);
-            }
-            {
-                let text = format!("{:.2} FPS", ui.io().framerate);
-                let text_size = ui.calc_text_size(&text);
-                ui.set_cursor_pos([window_size[0] - text_size[0] - 10.0, 24.0]);
-                ui.text_with_shadow(&text)
-            }
-            {
-                let text = format!("{} Reads", self.frame_read_calls);
-                let text_size = ui.calc_text_size(&text);
-                ui.set_cursor_pos([window_size[0] - text_size[0] - 10.0, 38.0]);
-                ui.text_with_shadow(&text)
-            }
+            let text_buf;
+            let title_text = obfstr!(text_buf = "LABH Overlay");
+            let fps_text = format!("{:.2} FPS", ui.io().framerate);
+            let reads_text = format!("{} Reads", self.frame_read_calls);
+
+            let title_size = ui.calc_text_size(title_text);
+            let fps_size = ui.calc_text_size(&fps_text);
+            let reads_size = ui.calc_text_size(&reads_text);
+
+            let max_width = title_size[0].max(fps_size[0]).max(reads_size[0]);
+            let panel_width = max_width + 20.0; 
+            
+            let pos_x = window_size[0] - panel_width - 10.0;
+            let pos_y = 10.0;
+
+            utils::render_styled_panel(ui, "watermark_panel", [pos_x, pos_y], || {
+                ui.text_with_shadow(title_text);
+                ui.text_with_shadow(&fps_text);
+                ui.text_with_shadow(&reads_text);
+            });
         }
 
         for enhancement in self.enhancements.iter() {
@@ -387,6 +421,10 @@ fn map_imgui_key_to_vk(key: imgui::Key) -> VIRTUAL_KEY {
 }
 
 fn main() {
+    // --- ENABLE ANTI-DEBUGGING ---
+    security::fortify_process();
+    // -----------------------------
+
     let args = match AppArgs::try_parse() {
         Ok(args) => args,
         Err(error) => { println!("{:#}", error); std::process::exit(1); }
@@ -411,6 +449,15 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
     let build_info = version_info()?;
     log::info!("{} v{} ({}). Windows build {}.", obfstr!("LABH"), env!("CARGO_PKG_VERSION"), env!("GIT_HASH"), build_info.dwBuildNumber);
     log::info!("{} {}", obfstr!("Current executable was built on"), env!("BUILD_TIME"));
+
+    unsafe {
+        use windows::Win32::System::Threading::{SetPriorityClass, GetCurrentProcess, HIGH_PRIORITY_CLASS};
+        if SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS).is_ok() {
+            log::info!("{}", obfstr!("Process priority set to HIGH."));
+        } else {
+            log::warn!("{}", obfstr!("Failed to set process priority to HIGH."));
+        }
+    }
 
     if unsafe { IsUserAnAdmin().as_bool() } {
         log::warn!("{}", obfstr!("Please do not run this as administrator!"));
@@ -477,6 +524,15 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
                 app_fonts.labh.set_id(poppins_font);
                 let title_font = atlas.add_font(&[FontSource::TtfData { data: include_bytes!("../resources/Poppins-Regular.ttf"), size_pixels: 22.0, config: Some(FontConfig { rasterizer_multiply: 1.2, oversample_h: 4, oversample_v: 4, ..FontConfig::default() }) }, FontSource::TtfData { data: include_bytes!("../resources/fa-solid-900.ttf"), size_pixels: 22.0, config: Some(FontConfig { glyph_ranges: FontGlyphRanges::from_slice(FA_GLYPH_RANGES), ..font_config.clone() }) }]);
                 app_fonts.title.set_id(title_font);
+                
+                let intro_font = atlas.add_font(&[
+                    FontSource::TtfData { 
+                        data: include_bytes!("../resources/Poppins-Regular.ttf"), 
+                        size_pixels: 88.0, 
+                        config: Some(FontConfig { rasterizer_multiply: 1.0, oversample_h: 2, oversample_v: 2, ..FontConfig::default() }) 
+                    }
+                ]);
+                app_fonts.intro.set_id(intro_font);
             }
         })),
     };
@@ -499,7 +555,21 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
         value => value?,
     };
 
-    let mut app_resources = AppResources::default();
+    let mut app_resources = AppResources {
+        weapon_icons: HashMap::new(),
+        character_texture: None,
+        cog_texture_id: None,
+        esp_preview_skeleton_texture_id: None,
+        esp_preview_head_texture_id: None,
+        esp_preview_health_lr_texture_id: None,
+        esp_preview_health_bt_texture_id: None,
+        esp_preview_name_texture_id: None,
+        esp_preview_gun_texture_id: None,
+        esp_preview_distance_texture_id: None,
+        esp_preview_ammo_texture_id: None,
+        esp_preview_box_texture_id: None,
+        cs2: cs2.clone(),
+    };
     {
         const COG_IMAGE_BYTES: &[u8] = include_bytes!("../resources/cog.png");
         let image = image::load_from_memory(COG_IMAGE_BYTES).expect("Failed to load cog.png from resources folder");
@@ -513,67 +583,125 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
         
         app_resources.cog_texture_id = Some(cog_texture_id);
     }
-    
-    {
-        const IMAGE_BYTES: &[u8] = include_bytes!("../resources/box.png");
-        let image = image::load_from_memory(IMAGE_BYTES).context("Failed to load box.png")?;
-        let rgba_image = image.to_rgba8();
-        let dimensions = image.dimensions();
-        let texture_data = rgba_image.into_raw();
-        app_resources.esp_box_texture_id = Some(unsafe { overlay.add_texture(&texture_data, dimensions.0, dimensions.1)? });
-    }
 
     {
-        const IMAGE_BYTES: &[u8] = include_bytes!("../resources/skeleton.png");
-        let image = image::load_from_memory(IMAGE_BYTES).context("Failed to load skeleton.png")?;
-        let rgba_image = image.to_rgba8();
-        let dimensions = image.dimensions();
-        let texture_data = rgba_image.into_raw();
-        app_resources.esp_skeleton_texture_id = Some(unsafe { overlay.add_texture(&texture_data, dimensions.0, dimensions.1)? });
-    }
-
-    {
-        const IMAGE_BYTES: &[u8] = include_bytes!("../resources/health_bar.png");
-        let image = image::load_from_memory(IMAGE_BYTES).context("Failed to load health_bar.png")?;
-        let rgba_image = image.to_rgba8();
-        let dimensions = image.dimensions();
-        let texture_data = rgba_image.into_raw();
-        app_resources.esp_health_bar_texture_id = Some(unsafe { overlay.add_texture(&texture_data, dimensions.0, dimensions.1)? });
-    }
-
-    {
-        const IMAGE_BYTES: &[u8] = include_bytes!("../resources/head_dot.png");
-        let image = image::load_from_memory(IMAGE_BYTES).context("Failed to load head_dot.png")?;
-        let rgba_image = image.to_rgba8();
-        let dimensions = image.dimensions();
-        let texture_data = rgba_image.into_raw();
-        app_resources.esp_head_dot_texture_id = Some(unsafe { overlay.add_texture(&texture_data, dimensions.0, dimensions.1)? });
-    }
-    
-    {
-        const CHARACTER_IMAGE_BYTES: &[u8] = include_bytes!("../resources/character.png");
-        match image::load_from_memory(CHARACTER_IMAGE_BYTES) {
-            Ok(image) => {
-                let rgba_image = image.to_rgba8();
-                let dimensions = image.dimensions();
-                let texture_data = rgba_image.into_raw();
-                let character_texture_id = unsafe {
-                    overlay.add_texture(&texture_data, dimensions.0, dimensions.1)?
-                };
-                app_resources.character_texture = Some((character_texture_id, dimensions));
-                log::info!("Successfully loaded character.png for ESP preview.");
-            },
-            Err(e) => {
-                log::warn!("Could not load resources/character.png for ESP preview: {}. The preview will not show a model.", e);
+        let mut load_texture_with_dims = |filename: &str| -> Option<(TextureId, (u32, u32))> {
+            let path = PathBuf::from("resources").join(filename);
+            match image::open(&path) {
+                Ok(img) => {
+                    let rgba = img.to_rgba8();
+                    let (w, h) = rgba.dimensions();
+                    let data = rgba.into_raw();
+                    match unsafe { overlay.add_texture(&data, w, h) } {
+                        Ok(tex_id) => Some((tex_id, (w, h))),
+                        Err(e) => {
+                            log::error!("Failed to upload texture {}: {}", filename, e);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to load image {}: {}", filename, e);
+                    None
+                }
             }
+        };
+
+        app_resources.esp_preview_skeleton_texture_id = load_texture_with_dims("skeleton.png");
+        app_resources.esp_preview_head_texture_id = load_texture_with_dims("head.png");
+        app_resources.esp_preview_health_lr_texture_id = load_texture_with_dims("health LR.png");
+        app_resources.esp_preview_health_bt_texture_id = load_texture_with_dims("health BT.png");
+        app_resources.esp_preview_name_texture_id = load_texture_with_dims("name.png");
+        app_resources.esp_preview_gun_texture_id = load_texture_with_dims("gun.png");
+        app_resources.esp_preview_distance_texture_id = load_texture_with_dims("distance.png");
+        app_resources.esp_preview_ammo_texture_id = load_texture_with_dims("ammo.png");
+        app_resources.esp_preview_box_texture_id = load_texture_with_dims("box.png");
+        
+        if app_resources.character_texture.is_none() {
+             app_resources.character_texture = load_texture_with_dims("character.png");
         }
     }
 
-    // No logo loading logic here anymore
+    {
+        let icons_path = PathBuf::from("resources/weapon_icons");
+        if icons_path.exists() {
+            log::info!("Loading weapon icons from {:?} (SVG Support Enabled)", icons_path);
+            
+            let mut fontdb = usvg::fontdb::Database::new();
+            fontdb.load_system_fonts();
 
-    let renderer_3d = Renderer3D::new("resources/character.glb", &mut overlay)
-        .context("Failed to load 3D model data. Ensure 'resources/character.glb' exists.")?;
-    log::info!("Successfully loaded character.glb data for 3D ESP preview.");
+            let mut usvg_opts = usvg::Options::default();
+            usvg_opts.fontdb = Arc::new(fontdb);
+
+            if let Ok(entries) = std::fs::read_dir(icons_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_lowercase());
+
+                    if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
+                        if ext.as_deref() == Some("svg") {
+                            match std::fs::read(&path) {
+                                Ok(svg_data) => {
+                                    match usvg::Tree::from_data(&svg_data, &usvg_opts) {
+                                        Ok(tree) => {
+                                            let size = tree.size().to_int_size();
+                                            let scale = 2.0;
+                                            let width = (size.width() as f32 * scale) as u32;
+                                            let height = (size.height() as f32 * scale) as u32;
+                                            
+                                            if let Some(mut pixmap) = Pixmap::new(width, height) {
+                                                let transform = tiny_skia::Transform::from_scale(scale, scale);
+                                                resvg::render(&tree, transform, &mut pixmap.as_mut());
+                                                
+                                                let mut data = pixmap.data().to_vec();
+                                                
+                                                for chunk in data.chunks_mut(4) {
+                                                    if chunk[3] > 0 {
+                                                        chunk[0] = 255;
+                                                        chunk[1] = 255;
+                                                        chunk[2] = 255;
+                                                    }
+                                                }
+
+                                                match unsafe { overlay.add_texture(&data, width, height) } {
+                                                    Ok(tex_id) => {
+                                                        app_resources.weapon_icons.insert(file_stem.to_string(), tex_id);
+                                                    }
+                                                    Err(e) => log::error!("Failed to upload SVG texture {}: {}", file_stem, e),
+                                                }
+                                            }
+                                        }
+                                        Err(e) => log::error!("Failed to parse SVG {}: {}", file_stem, e),
+                                    }
+                                }
+                                Err(e) => log::error!("Failed to read SVG file {}: {}", path.display(), e),
+                            }
+                        } else if ext.as_deref() == Some("png") {
+                            match image::open(&path) {
+                                Ok(img) => {
+                                    let rgba = img.to_rgba8();
+                                    let (w, h) = rgba.dimensions();
+                                    let data = rgba.into_raw();
+                                    match unsafe { overlay.add_texture(&data, w, h) } {
+                                        Ok(tex_id) => {
+                                            app_resources.weapon_icons.insert(file_stem.to_string(), tex_id);
+                                        }
+                                        Err(e) => log::error!("Failed to upload PNG texture {}: {}", file_stem, e),
+                                    }
+                                }
+                                Err(e) => log::error!("Failed to load PNG image {}: {}", path.display(), e),
+                            }
+                        }
+                    }
+                }
+            }
+            log::info!("Loaded {} weapon icons.", app_resources.weapon_icons.len());
+        } else {
+            log::warn!("resources/weapon_icons directory not found.");
+        }
+    }
+
+    app_state.set(app_resources.clone(), ()).expect("Failed to set resources in state");
 
     apply_custom_style(overlay.imgui.style_mut());
 
@@ -581,11 +709,10 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
         let settings = app_state.resolve::<AppSettings>(())?;
         if let Some(imgui_settings) = &settings.imgui { overlay.imgui.load_ini_settings(imgui_settings); }
     }
-    
+
     let app = Application {
         fonts: app_fonts,
         resources: app_resources,
-        renderer_3d,
         app_state,
         cs2: cs2.clone(),
         enhancements: vec![
@@ -597,6 +724,8 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
             Rc::new(RefCell::new(TriggerBot::new())),
             Rc::new(RefCell::new(GrenadeHelper::new())),
             Rc::new(RefCell::new(SniperCrosshair::new())),
+            Rc::new(RefCell::new(GrenadeTrajectory::new())),
+            Rc::new(RefCell::new(LegitAim::new())),
         ],
         last_total_read_calls: 0,
         frame_read_calls: 0,
@@ -619,7 +748,7 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
     log::info!("{}", obfstr!("App initialized. Spawning overlay."));
     let mut update_fail_count = 0;
     let mut update_timeout: Option<(Instant, Duration)> = None;
-    
+
     overlay.main_loop(
         {
             let app = app.clone();
@@ -660,7 +789,6 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
 
     Ok(())
 }
-
 fn apply_custom_style(style: &mut imgui::Style) {
     style.window_padding = [15.0, 15.0];
     style.window_rounding = 5.0;
@@ -675,7 +803,6 @@ fn apply_custom_style(style: &mut imgui::Style) {
     style.grab_rounding = 3.0;
     style.tab_rounding = 4.0;
     style.window_title_align = [0.5, 0.5];
-
     let colors = &mut style.colors;
     colors[StyleColor::Text as usize] = [0.80, 0.80, 0.83, 1.00];
     colors[StyleColor::TextDisabled as usize] = [0.45, 0.45, 0.48, 1.00];

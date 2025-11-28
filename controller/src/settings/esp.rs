@@ -1,4 +1,4 @@
-// settings/esp.rs
+// controller/src/settings/esp.rs
 
 use cs2::{
     WeaponId,
@@ -22,23 +22,10 @@ use crate::AppResources;
 #[derive(Clone, Copy, Default, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub struct Color(u32);
 impl Color {
-    pub fn as_u8(&self) -> [u8; 4] {
-        self.0.to_le_bytes()
-    }
-
-    pub fn as_f32(&self) -> [f32; 4] {
-        self.as_u8()
-            .map(|channel| (channel as f32) / (u8::MAX as f32))
-    }
-
-    pub const fn from_u8(value: [u8; 4]) -> Self {
-        Self(u32::from_le_bytes(value))
-    }
-
-    pub const fn from_u32(value: u32) -> Self {
-        Self(value)
-    }
-
+    pub fn as_u8(&self) -> [u8; 4] { self.0.to_le_bytes() }
+    pub fn as_f32(&self) -> [f32; 4] { self.as_u8().map(|channel| (channel as f32) / (u8::MAX as f32)) }
+    pub const fn from_u8(value: [u8; 4]) -> Self { Self(u32::from_le_bytes(value)) }
+    pub const fn from_u32(value: u32) -> Self { Self(value) }
     pub const fn from_f32(value: [f32; 4]) -> Self {
         Self::from_u8([
             (value[0] * 255.0) as u8,
@@ -47,31 +34,11 @@ impl Color {
             (value[3] * 255.0) as u8,
         ])
     }
-    
-    pub fn set_alpha_u8(&mut self, alpha: u8) {
-        let mut value = self.as_u8();
-        value[3] = alpha;
-        *self = Self::from_u8(value);
-    }
-
-    pub fn set_alpha_f32(&mut self, alpha: f32) {
-        let mut value = self.as_u8();
-        value[3] = (alpha * 255.0) as u8;
-        *self = Self::from_u8(value);
-    }
+    pub fn set_alpha_u8(&mut self, alpha: u8) { let mut value = self.as_u8(); value[3] = alpha; *self = Self::from_u8(value); }
+    pub fn set_alpha_f32(&mut self, alpha: f32) { let mut value = self.as_u8(); value[3] = (alpha * 255.0) as u8; *self = Self::from_u8(value); }
 }
-
-impl From<[u8; 4]> for Color {
-    fn from(value: [u8; 4]) -> Self {
-        Self::from_u8(value)
-    }
-}
-
-impl From<[f32; 4]> for Color {
-    fn from(value: [f32; 4]) -> Self {
-        Self::from_f32(value)
-    }
-}
+impl From<[u8; 4]> for Color { fn from(value: [u8; 4]) -> Self { Self::from_u8(value) } }
+impl From<[f32; 4]> for Color { fn from(value: [f32; 4]) -> Self { Self::from_f32(value) } }
 
 #[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)]
 #[serde(tag = "type", content = "options")]
@@ -80,22 +47,15 @@ pub enum EspColor {
     HealthBased { max: Color, mid: Color, min: Color },
     Static { value: Color },
     DistanceBased { near: Color, mid: Color, far: Color },
+    #[serde(alias = "Gradient")]
+    GradientPulse { start: Color, end: Color, speed: f32 },
+    GradientVertical { top: Color, bottom: Color },
 }
 
-impl Default for EspColor {
-    fn default() -> Self {
-        Self::Static {
-            value: Color::from_f32([1.0, 1.0, 1.0, 1.0]),
-        }
-    }
-}
+impl Default for EspColor { fn default() -> Self { Self::Static { value: Color::from_f32([1.0, 1.0, 1.0, 1.0]), } } }
 
 impl EspColor {
-    pub const fn from_rgba(r: f32, g: f32, b: f32, a: f32) -> Self {
-        Self::Static {
-            value: Color::from_f32([r, g, b, a]),
-        }
-    }
+    pub const fn from_rgba(r: f32, g: f32, b: f32, a: f32) -> Self { Self::Static { value: Color::from_f32([r, g, b, a]), } }
 
     fn interpolate_color(start: [f32; 4], end: [f32; 4], t: f32) -> [f32; 4] {
         [
@@ -106,61 +66,36 @@ impl EspColor {
         ]
     }
 
-    pub fn calculate_color(&self, health: f32, distance: f32) -> [f32; 4] {
+    pub fn calculate_color(&self, health: f32, distance: f32, time: f32, vertical_t: f32) -> [f32; 4] {
         match self {
             Self::Static { value } => value.as_f32(),
             Self::HealthBased { max, mid, min } => {
-                let max_rgb = max.as_f32();
-                let mid_rgb = mid.as_f32();
-                let min_rgb = min.as_f32();
-
-                if health > 0.5 {
-                    let t = (health - 0.5) * 2.0;
-                    Self::interpolate_color(mid_rgb, max_rgb, t)
-                } else {
-                    let t = health * 2.0;
-                    Self::interpolate_color(min_rgb, mid_rgb, t)
-                }
+                let max_rgb = max.as_f32(); let mid_rgb = mid.as_f32(); let min_rgb = min.as_f32();
+                if health > 0.5 { Self::interpolate_color(mid_rgb, max_rgb, (health - 0.5) * 2.0) } 
+                else { Self::interpolate_color(min_rgb, mid_rgb, health * 2.0) }
             }
             Self::HealthBasedRainbow { alpha } => {
-                let sin_value = |offset: f32| {
-                    (2.0 * std::f32::consts::PI * health * 0.75 + offset).sin() * 0.5 + 1.0
-                };
-                let r: f32 = sin_value(0.0);
-                let g: f32 = sin_value(2.0 * std::f32::consts::PI / 3.0);
-                let b: f32 = sin_value(4.0 * std::f32::consts::PI / 3.0);
-                [r, g, b, *alpha]
+                let sin_value = |offset: f32| { (2.0 * std::f32::consts::PI * health * 0.75 + offset).sin() * 0.5 + 1.0 };
+                [sin_value(0.0), sin_value(2.0 * std::f32::consts::PI / 3.0), sin_value(4.0 * std::f32::consts::PI / 3.0), *alpha]
             }
             Self::DistanceBased { near, mid, far } => {
-                let max_distance = 50.0;
-                let min_distance = 0.0;
-
-                let color_near = near.as_f32();
-                let color_mid = mid.as_f32();
-                let color_far = far.as_f32();
-
-                let t = ((distance - min_distance) / (max_distance - min_distance)).clamp(0.0, 1.0);
-
-                if t < 0.5 {
-                    let t2 = t * 2.0;
-                    Self::interpolate_color(color_near, color_mid, t2)
-                } else {
-                    let t2 = (t - 0.5) * 2.0;
-                    Self::interpolate_color(color_mid, color_far, t2)
-                }
+                let t = ((distance) / 50.0).clamp(0.0, 1.0);
+                let (near, mid, far) = (near.as_f32(), mid.as_f32(), far.as_f32());
+                if t < 0.5 { Self::interpolate_color(near, mid, t * 2.0) } else { Self::interpolate_color(mid, far, (t - 0.5) * 2.0) }
+            }
+            Self::GradientPulse { start, end, speed } => {
+                let t = (time * speed).sin() * 0.5 + 0.5;
+                Self::interpolate_color(start.as_f32(), end.as_f32(), t)
+            }
+            Self::GradientVertical { top, bottom } => {
+                Self::interpolate_color(top.as_f32(), bottom.as_f32(), vertical_t.clamp(0.0, 1.0))
             }
         }
     }
 }
 
 #[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)]
-pub enum EspColorType {
-    Static,
-    HealthBased,
-    HealthBasedRainbow,
-    DistanceBased,
-}
-
+pub enum EspColorType { Static, HealthBased, HealthBasedRainbow, DistanceBased, GradientPulse, GradientVertical }
 impl EspColorType {
     pub fn from_esp_color(color: &EspColor) -> Self {
         match color {
@@ -168,44 +103,18 @@ impl EspColorType {
             EspColor::HealthBased { .. } => Self::HealthBased,
             EspColor::HealthBasedRainbow { .. } => Self::HealthBasedRainbow,
             EspColor::DistanceBased { .. } => Self::DistanceBased,
+            EspColor::GradientPulse { .. } => Self::GradientPulse,
+            EspColor::GradientVertical { .. } => Self::GradientVertical,
         }
     }
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)]
-pub enum EspHealthBar {
-    None,
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)]
-pub enum EspBoxType {
-    None,
-    Box2D,
-    Box3D,
-}
-
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)]
-pub enum EspTracePosition {
-    None,
-    TopLeft,
-    TopCenter,
-    TopRight,
-    Center,
-    BottomLeft,
-    BottomCenter,
-    BottomRight,
-}
-
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)]
-pub enum EspHeadDot {
-    None,
-    Filled,
-    NotFilled,
-}
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)] pub enum EspHealthBar { None, Top, Bottom, Left, Right }
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)] pub enum EspBoxType { None, Box2D, Box3D }
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)] pub enum EspTracePosition { None, TopLeft, TopCenter, TopRight, Center, BottomLeft, BottomCenter, BottomRight }
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)] pub enum EspHeadDot { None, Filled, NotFilled }
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd, Debug)] pub enum EspInfoStyle { Text, Icon }
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd, Debug)] pub enum EspTextStyle { Shadow, Outline, Neon }
 
 #[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)]
 #[serde(default)]
@@ -221,6 +130,9 @@ pub struct EspPlayerSettings {
     pub tracer_lines: EspTracePosition,
     pub tracer_lines_color: EspColor,
     pub tracer_lines_width: f32,
+    pub text_style: EspTextStyle,
+    pub text_outline_enabled: bool,
+    pub text_outline_color: EspColor,
     pub info_name: bool,
     pub info_name_color: EspColor,
     pub info_distance: bool,
@@ -228,6 +140,7 @@ pub struct EspPlayerSettings {
     pub near_players: bool,
     pub near_players_distance: f32,
     pub info_weapon: bool,
+    pub info_weapon_style: EspInfoStyle,
     pub info_weapon_color: EspColor,
     pub info_ammo: bool,
     pub info_ammo_color: EspColor,
@@ -243,11 +156,19 @@ pub struct EspPlayerSettings {
     pub info_flag_bomb_color: EspColor,
     pub info_grenades: bool,
     pub info_grenades_color: EspColor,
+    // --- OFFSCREEN ARROWS ---
+    pub offscreen_arrows: bool,
+    pub offscreen_arrows_color: EspColor,
+    pub offscreen_arrows_radius: f32,
+    pub offscreen_arrows_size: f32,
+    // ------------------------
     pub head_dot: EspHeadDot,
     pub head_dot_color: EspColor,
     pub head_dot_thickness: f32,
     pub head_dot_base_radius: f32,
     pub head_dot_z: f32,
+    pub chams: bool,
+    pub chams_color: EspColor,
 }
 
 const ESP_COLOR_FRIENDLY: EspColor = EspColor::from_rgba(0.0, 1.0, 0.0, 0.75);
@@ -255,30 +176,34 @@ const ESP_COLOR_ENEMY: EspColor = EspColor::from_rgba(1.0, 0.0, 0.0, 0.75);
 impl EspPlayerSettings {
     pub fn new(target: &EspSelector) -> Self {
         let color = match target {
-            EspSelector::PlayerTeam { enemy } => {
-                if *enemy { ESP_COLOR_ENEMY } else { ESP_COLOR_FRIENDLY }
-            }
-            EspSelector::PlayerTeamVisibility { enemy, .. } => {
-                if *enemy { ESP_COLOR_ENEMY } else { ESP_COLOR_FRIENDLY }
-            }
+            EspSelector::PlayerTeam { enemy } => { if *enemy { ESP_COLOR_ENEMY } else { ESP_COLOR_FRIENDLY } }
+            EspSelector::PlayerTeamVisibility { enemy, .. } => { if *enemy { ESP_COLOR_ENEMY } else { ESP_COLOR_FRIENDLY } }
             _ => EspColor::from_rgba(1.0, 1.0, 1.0, 0.75),
         };
-
         Self {
             box_type: EspBoxType::None, box_color: color, box_width: 1.0,
             skeleton: true, skeleton_color: color, skeleton_width: 1.0,
             health_bar: EspHealthBar::None, health_bar_width: 4.0,
             tracer_lines: EspTracePosition::None, tracer_lines_color: color, tracer_lines_width: 1.0,
+            text_style: EspTextStyle::Shadow,
+            text_outline_enabled: false, text_outline_color: color,
             info_name: false, info_name_color: color,
             info_distance: false, info_distance_color: color,
             near_players: false, near_players_distance: 20.0,
-            info_weapon: false, info_weapon_color: color,
+            info_weapon: false, info_weapon_style: EspInfoStyle::Text, info_weapon_color: color,
             info_ammo: false, info_ammo_color: color,
             info_hp_text: false, info_hp_text_color: color,
             info_flag_kit: false, info_flag_scoped: false, info_flag_flashed: false, info_flag_bomb: false,
             info_flag_kit_color: color, info_flag_scoped_color: color, info_flag_flashed_color: color, info_flag_bomb_color: color,
             info_grenades: false, info_grenades_color: color,
+            // --- OFFSCREEN ARROWS ---
+            offscreen_arrows: false, 
+            offscreen_arrows_color: color,
+            offscreen_arrows_radius: 300.0,
+            offscreen_arrows_size: 15.0,
+            // ------------------------
             head_dot: EspHeadDot::None, head_dot_color: color, head_dot_thickness: 1.0, head_dot_base_radius: 4.0, head_dot_z: 1.0,
+            chams: false, chams_color: color,
         }
     }
 }
@@ -291,71 +216,37 @@ impl Default for EspPlayerSettings {
             skeleton: true, skeleton_color: neutral_color, skeleton_width: 1.0,
             health_bar: EspHealthBar::Left, health_bar_width: 4.0,
             tracer_lines: EspTracePosition::None, tracer_lines_color: neutral_color, tracer_lines_width: 1.0,
+            text_style: EspTextStyle::Shadow,
+            text_outline_enabled: false, text_outline_color: neutral_color,
             info_name: true, info_name_color: neutral_color,
             info_distance: true, info_distance_color: neutral_color,
             near_players: false, near_players_distance: 20.0,
-            info_weapon: true, info_weapon_color: neutral_color,
+            info_weapon: true, info_weapon_style: EspInfoStyle::Text, info_weapon_color: neutral_color,
             info_ammo: false, info_ammo_color: neutral_color,
             info_hp_text: false, info_hp_text_color: neutral_color,
             info_flag_kit: true, info_flag_scoped: true, info_flag_flashed: true, info_flag_bomb: true,
             info_flag_kit_color: neutral_color, info_flag_scoped_color: neutral_color, info_flag_flashed_color: neutral_color, info_flag_bomb_color: neutral_color,
             info_grenades: false, info_grenades_color: neutral_color,
+            // --- OFFSCREEN ARROWS ---
+            offscreen_arrows: false,
+            offscreen_arrows_color: neutral_color,
+            offscreen_arrows_radius: 300.0,
+            offscreen_arrows_size: 15.0,
+            // ------------------------
             head_dot: EspHeadDot::NotFilled, head_dot_color: neutral_color, head_dot_thickness: 1.0, head_dot_base_radius: 4.0, head_dot_z: 1.0,
+            chams: false, chams_color: neutral_color,
         }
     }
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)]
-#[serde(default)]
-pub struct EspChickenSettings {
-    pub box_type: EspBoxType,
-    pub box_color: EspColor,
-    pub skeleton: bool,
-    pub skeleton_color: EspColor,
-    pub info_owner: bool,
-    pub info_owner_color: EspColor,
-}
-
-impl Default for EspChickenSettings {
-    fn default() -> Self {
-        Self {
-            box_type: EspBoxType::None, box_color: EspColor::default(),
-            skeleton: false, skeleton_color: EspColor::default(),
-            info_owner: false, info_owner_color: EspColor::default(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)]
-#[serde(default)]
-pub struct EspWeaponSettings {
-    pub draw_box: bool,
-    pub draw_box_color: EspColor,
-    pub info_name: bool,
-    pub info_name_color: EspColor,
-}
-
-impl Default for EspWeaponSettings {
-    fn default() -> Self {
-        Self {
-            draw_box: false, draw_box_color: EspColor::default(),
-            info_name: false, info_name_color: EspColor::default(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)]
-#[serde(tag = "type")]
-pub enum EspConfig {
-    Player(EspPlayerSettings),
-    Chicken(EspChickenSettings),
-    Weapon(EspWeaponSettings),
-}
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)] #[serde(default)] pub struct EspChickenSettings { pub box_type: EspBoxType, pub box_color: EspColor, pub skeleton: bool, pub skeleton_color: EspColor, pub info_owner: bool, pub info_owner_color: EspColor, }
+impl Default for EspChickenSettings { fn default() -> Self { Self { box_type: EspBoxType::None, box_color: EspColor::default(), skeleton: false, skeleton_color: EspColor::default(), info_owner: false, info_owner_color: EspColor::default(), } } }
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)] #[serde(default)] pub struct EspWeaponSettings { pub draw_box: bool, pub draw_box_color: EspColor, pub info_name: bool, pub info_name_color: EspColor, }
+impl Default for EspWeaponSettings { fn default() -> Self { Self { draw_box: false, draw_box_color: EspColor::default(), info_name: false, info_name_color: EspColor::default(), } } }
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq, PartialOrd)] #[serde(tag = "type")] pub enum EspConfig { Player(EspPlayerSettings), Chicken(EspChickenSettings), Weapon(EspWeaponSettings), }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub enum EspWeaponType {
-    Pistol, Shotgun, SMG, Rifle, SniperRifle, MachineGun, Grenade,
-}
+pub enum EspWeaponType { Pistol, Shotgun, SMG, Rifle, SniperRifle, MachineGun, Grenade, }
 
 impl EspWeaponType {
     pub fn display_name(&self) -> String {
@@ -365,7 +256,6 @@ impl EspWeaponType {
             Self::MachineGun => "Machine Gun", Self::Grenade => "Grenade",
         }.to_string()
     }
-
     pub fn config_key(&self) -> &'static str {
         match self {
             Self::Pistol => "pistol", Self::Shotgun => "shotgun", Self::SMG => "smg",
@@ -373,7 +263,6 @@ impl EspWeaponType {
             Self::MachineGun => "machine-gun", Self::Grenade => "grenade",
         }
     }
-
     pub fn weapons(&self) -> Vec<WeaponId> {
         let flag = match self {
             Self::Pistol => WEAPON_FLAG_TYPE_PISTOL, Self::Shotgun => WEAPON_FLAG_TYPE_SHOTGUN,
@@ -396,46 +285,22 @@ impl EspSelector {
         match self {
             EspSelector::None => "invalid".to_string(),
             EspSelector::Player => "player".to_string(),
-            EspSelector::PlayerTeam { enemy } => {
-                format!("player.{}", if *enemy { "enemy" } else { "friendly" },)
-            }
-            EspSelector::PlayerTeamVisibility { enemy, visible } => format!(
-                "player.{}.{}",
-                if *enemy { "enemy" } else { "friendly" },
-                if *visible { "visible" } else { "occluded" }
-            ),
+            EspSelector::PlayerTeam { enemy } => { format!("player.{}", if *enemy { "enemy" } else { "friendly" },) }
+            EspSelector::PlayerTeamVisibility { enemy, visible } => format!( "player.{}.{}", if *enemy { "enemy" } else { "friendly" }, if *visible { "visible" } else { "occluded" } ),
             EspSelector::Chicken => "chicken".to_string(),
-
             EspSelector::Weapon => format!("weapon"),
             EspSelector::WeaponGroup { group } => format!("weapon.{}", group.config_key()),
-            EspSelector::WeaponSingle { group, target } => {
-                format!("weapon.{}.{}", group.config_key(), target.name())
-            }
+            EspSelector::WeaponSingle { group, target } => { format!("weapon.{}.{}", group.config_key(), target.name()) }
         }
     }
 
     pub fn config_display(&self) -> String {
         match self {
             EspSelector::None => "None".to_string(),
-
             EspSelector::Player => "Player".to_string(),
-            EspSelector::PlayerTeam { enemy } => {
-                if *enemy {
-                    "Enemy".to_string()
-                } else {
-                    "Friendly".to_string()
-                }
-            }
-            EspSelector::PlayerTeamVisibility { visible, .. } => {
-                if *visible {
-                    "Visible".to_string()
-                } else {
-                    "Occluded".to_string()
-                }
-            }
-
+            EspSelector::PlayerTeam { enemy } => { if *enemy { "Enemy".to_string() } else { "Friendly".to_string() } }
+            EspSelector::PlayerTeamVisibility { visible, .. } => { if *visible { "Visible".to_string() } else { "Occluded".to_string() } }
             EspSelector::Chicken => "Chicken".to_string(),
-
             EspSelector::Weapon => "Weapons".to_string(),
             EspSelector::WeaponGroup { group } => group.display_name(),
             EspSelector::WeaponSingle { target, .. } => target.display_name().to_string(),
@@ -445,50 +310,23 @@ impl EspSelector {
     pub fn config_title(&self) -> String {
         match self {
             EspSelector::None => obfstr!("ESP Configuration").to_string(),
-
             EspSelector::Player => obfstr!("Enabled ESP for all players").to_string(),
-            EspSelector::PlayerTeam { enemy } => format!(
-                "{} {} players",
-                obfstr!("Enabled ESP for"),
-                if *enemy { "enemy" } else { "friendly" }
-            ),
-            EspSelector::PlayerTeamVisibility { enemy, visible } => format!(
-                "{} {} {} players",
-                obfstr!("Enabled ESP for"),
-                if *visible { "visible" } else { "occluded" },
-                if *enemy { "enemy" } else { "friendly" }
-            ),
-
+            EspSelector::PlayerTeam { enemy } => format!( "{} {} players", obfstr!("Enabled ESP for"), if *enemy { "enemy" } else { "friendly" } ),
+            EspSelector::PlayerTeamVisibility { enemy, visible } => format!( "{} {} {} players", obfstr!("Enabled ESP for"), if *visible { "visible" } else { "occluded" }, if *enemy { "enemy" } else { "friendly" } ),
             EspSelector::Chicken => obfstr!("Enabled ESP for chickens").to_string(),
-
             EspSelector::Weapon => obfstr!("Enabled ESP for all weapons").to_string(),
-            EspSelector::WeaponGroup { group } => {
-                format!(
-                    "{} {}",
-                    obfstr!("Enabled ESP for"),
-                    group.display_name().to_lowercase()
-                )
-            }
-            EspSelector::WeaponSingle { target, .. } => {
-                format!(
-                    "{} {}",
-                    obfstr!("Enabled ESP for weapon"),
-                    target.display_name()
-                )
-            }
+            EspSelector::WeaponGroup { group } => { format!( "{} {}", obfstr!("Enabled ESP for"), group.display_name().to_lowercase() ) }
+            EspSelector::WeaponSingle { target, .. } => { format!( "{} {}", obfstr!("Enabled ESP for weapon"), target.display_name() ) }
         }
     }
 
     pub fn parent(&self) -> Option<Self> {
         match self {
             Self::None => None,
-
             Self::Player => None,
             Self::PlayerTeam { .. } => Some(Self::Player),
             Self::PlayerTeamVisibility { enemy, .. } => Some(Self::PlayerTeam { enemy: *enemy }),
-
             Self::Chicken => None,
-
             Self::Weapon => None,
             Self::WeaponGroup { .. } => Some(Self::Weapon),
             Self::WeaponSingle { group, .. } => Some(Self::WeaponGroup { group: *group }),
@@ -498,14 +336,10 @@ impl EspSelector {
     pub fn children(&self) -> Vec<Self> {
         match self {
             EspSelector::None => vec![],
-            EspSelector::Player => vec![
-                EspSelector::PlayerTeam { enemy: false },
-                EspSelector::PlayerTeam { enemy: true },
-            ],
+            EspSelector::Player => vec![ EspSelector::PlayerTeam { enemy: false }, EspSelector::PlayerTeam { enemy: true }, ],
             EspSelector::PlayerTeam { .. } => vec![],
             EspSelector::PlayerTeamVisibility { .. } => vec![],
             EspSelector::Chicken => vec![],
-
             EspSelector::Weapon => vec![
                 EspSelector::WeaponGroup { group: EspWeaponType::Pistol },
                 EspSelector::WeaponGroup { group: EspWeaponType::SMG },
@@ -514,11 +348,7 @@ impl EspSelector {
                 EspSelector::WeaponGroup { group: EspWeaponType::SniperRifle },
                 EspSelector::WeaponGroup { group: EspWeaponType::Grenade },
             ],
-            EspSelector::WeaponGroup { group } => group
-                .weapons()
-                .into_iter()
-                .map(|weapon| EspSelector::WeaponSingle { group: *group, target: weapon })
-                .collect(),
+            EspSelector::WeaponGroup { group } => group.weapons().into_iter().map(|weapon| EspSelector::WeaponSingle { group: *group, target: weapon }).collect(),
             EspSelector::WeaponSingle { .. } => vec![],
         }
     }
@@ -591,6 +421,7 @@ pub fn draw_player_esp(
     _area_size: [f32; 2],
     alpha: f32,
     resources: &AppResources,
+    time: f32, 
 ) {
     if info.bones.is_empty() { return; }
 
@@ -602,18 +433,21 @@ pub fn draw_player_esp(
         max_y = max_y.max(pos[1]);
     }
 
-    if min_x == f32::MAX {
-        return; 
-    }
+    if min_x == f32::MAX { return; }
 
     let box_padding = 23.0;
     let box_pos = [min_x - box_padding, min_y - box_padding];
     let box_size = [(max_x - min_x) + box_padding * 2.0, (max_y - min_y) + box_padding * 2.0];
+    
+    let get_t = |y_pos: f32| -> f32 {
+        let box_h = box_size[1];
+        if box_h > 0.1 { (y_pos - box_pos[1]) / box_h } else { 0.0 }
+    };
 
-    // Draw Skeleton
-    if settings.skeleton {
-        if let Some(texture_id) = resources.esp_skeleton_texture_id {
-            let mut color = settings.skeleton_color.calculate_color(info.health, info.distance);
+    if settings.chams {
+        if let Some((texture_id, _)) = resources.esp_preview_skeleton_texture_id {
+            let t_skeleton = 0.5;
+            let mut color = settings.chams_color.calculate_color(info.health, info.distance, time, t_skeleton);
             color[3] *= alpha;
 
             let (mut body_min_x, mut body_min_y, mut body_max_x, mut body_max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
@@ -629,17 +463,40 @@ pub fn draw_player_esp(
             if body_min_x < f32::MAX {
                 let body_pos = [body_min_x, body_min_y];
                 let body_size = [body_max_x - body_min_x, body_max_y - body_min_y];
-                
+                draw_image_with_thickness(draw_list, texture_id, body_pos, body_size, 5.0, color);
+            }
+        }
+    }
+
+    if settings.skeleton {
+        if let Some((texture_id, _)) = resources.esp_preview_skeleton_texture_id {
+            let t_skeleton = 0.5; 
+            let mut color = settings.skeleton_color.calculate_color(info.health, info.distance, time, t_skeleton);
+            color[3] *= alpha;
+
+            let (mut body_min_x, mut body_min_y, mut body_max_x, mut body_max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+            for (name, pos) in info.bones.iter() {
+                if name != "head" {
+                    body_min_x = body_min_x.min(pos[0]);
+                    body_min_y = body_min_y.min(pos[1]);
+                    body_max_x = body_max_x.max(pos[0]);
+                    body_max_y = body_max_y.max(pos[1]);
+                }
+            }
+            
+            if body_min_x < f32::MAX {
+                let body_pos = [body_min_x, body_min_y];
+                let body_size = [body_max_x - body_min_x, body_max_y - body_min_y];
                 draw_image_with_thickness(draw_list, texture_id, body_pos, body_size, settings.skeleton_width, color);
             }
         }
     }
     
-    // Draw Head Dot
     if let Some(head_pos) = info.bones.get("head") {
         if settings.head_dot != EspHeadDot::None {
-            if let Some(texture_id) = resources.esp_head_dot_texture_id {
-                let mut color = settings.head_dot_color.calculate_color(info.health, info.distance);
+            if let Some((texture_id, _)) = resources.esp_preview_head_texture_id {
+                let t_head = get_t(head_pos[1]);
+                let mut color = settings.head_dot_color.calculate_color(info.health, info.distance, time, t_head);
                 color[3] *= alpha;
 
                 let radius = settings.head_dot_base_radius;
@@ -651,19 +508,34 @@ pub fn draw_player_esp(
         }
     }
 
-    // Draw 2D Box
     if settings.box_type == EspBoxType::Box2D {
-        if let Some(texture_id) = resources.esp_box_texture_id {
-            let mut color = settings.box_color.calculate_color(info.health, info.distance);
-            color[3] *= alpha;
-            
-            draw_image_with_thickness(draw_list, texture_id, box_pos, box_size, settings.box_width, color);
+        if let Some((texture_id, _)) = resources.esp_preview_box_texture_id {
+             if let EspColor::GradientVertical { top, bottom } = settings.box_color {
+                 let mut c_top = top.as_f32(); let mut c_bot = bottom.as_f32();
+                 c_top[3] *= alpha;
+                 c_bot[3] *= alpha;
+                 draw_list.add_rect_filled_multicolor(
+                     [box_pos[0], box_pos[1]], 
+                     [box_pos[0] + settings.box_width, box_pos[1] + box_size[1]], 
+                     c_top, c_top, c_bot, c_bot
+                 );
+                 draw_list.add_rect_filled_multicolor(
+                     [box_pos[0] + box_size[0] - settings.box_width, box_pos[1]], 
+                     [box_pos[0] + box_size[0], box_pos[1] + box_size[1]], 
+                     c_top, c_top, c_bot, c_bot
+                 );
+                 draw_list.add_rect(box_pos, [box_pos[0] + box_size[0], box_pos[1] + settings.box_width], c_top).filled(true).build();
+                 draw_list.add_rect([box_pos[0], box_pos[1] + box_size[1] - settings.box_width], [box_pos[0] + box_size[0], box_pos[1] + box_size[1]], c_bot).filled(true).build();
+             } else {
+                 let mut color = settings.box_color.calculate_color(info.health, info.distance, time, 0.0);
+                 color[3] *= alpha;
+                 draw_image_with_thickness(draw_list, texture_id, box_pos, box_size, settings.box_width, color);
+             }
         }
     }
     
-    // Draw Health Bar
     if settings.health_bar == EspHealthBar::Left {
-        if let Some(texture_id) = resources.esp_health_bar_texture_id {
+        if let Some((texture_id, _)) = resources.esp_preview_health_lr_texture_id {
             let hp_percent = info.health.clamp(0.0, 1.0);
             let bar_height = box_size[1];
             let bar_width = settings.health_bar_width;
@@ -671,7 +543,7 @@ pub fn draw_player_esp(
             let bar_pos = [box_pos[0] - bar_width - 2.0, box_pos[1]];
             let bar_end_pos = [bar_pos[0] + bar_width, bar_pos[1] + bar_height];
             
-            let mut color = settings.info_hp_text_color.calculate_color(info.health, info.distance);
+            let mut color = settings.info_hp_text_color.calculate_color(info.health, info.distance, time, 0.5);
             color[3] *= alpha;
             
             let p1 = [bar_pos[0], bar_pos[1] + bar_height * (1.0 - hp_percent)];

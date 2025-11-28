@@ -259,11 +259,11 @@ impl Enhancement for GrenadeHelper {
                         let Some(point) = view.world_to_screen(&point_3d, true) else {
                             continue;
                         };
-                        points.push(point);
+                        points.push([point.x, point.y]);
                     }
                     draw_list.add_polyline(points, color.as_f32()).build();
                     draw_list
-                        .add_circle(body_position, 3.0, color.as_f32())
+                        .add_circle([body_position.x, body_position.y], 3.0, color.as_f32())
                         .filled(true)
                         .build();
                 }
@@ -314,13 +314,13 @@ impl Enhancement for GrenadeHelper {
 
                     {
                         draw_list
-                            .add_circle(direction_indicator, 3.0, color.as_f32())
+                            .add_circle([direction_indicator.x, direction_indicator.y], 3.0, color.as_f32())
                             .filled(true)
                             .build();
 
                         draw_list
                             .add_line(
-                                direction_indicator,
+                                [direction_indicator.x, direction_indicator.y],
                                 [ui.window_size()[0] / 2.0, ui.window_size()[1]],
                                 color.as_f32(),
                             )

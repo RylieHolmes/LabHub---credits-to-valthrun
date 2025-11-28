@@ -1,3 +1,5 @@
+// controller/src/view/world.rs
+
 use cs2::{
     CS2Offset,
     StateCS2Handle,
@@ -13,7 +15,8 @@ use utils_state::{
 /// View controller which helps resolve in game
 /// coordinates into 2d screen coordinates.
 pub struct ViewController {
-    view_matrix: nalgebra::Matrix4<f32>,
+    // --- CHANGE: Added 'pub' here so other modules can access the raw matrix ---
+    pub view_matrix: nalgebra::Matrix4<f32>,
     pub screen_bounds: mint::Vector2<f32>,
 }
 
@@ -215,7 +218,7 @@ impl ViewController {
                 self.world_to_screen(&start, true),
                 self.world_to_screen(&end, true),
             ) {
-                draw.add_line(start, end, color)
+                draw.add_line([start.x, start.y], [end.x, end.y], color)
                     .thickness(thickness)
                     .build();
             }

@@ -1,0 +1,295 @@
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   C:\Users\rylie\Desktop\CODE PROJECTS\CS2 COMPLETED\cs2-main\controller\Cargo.toml
+workspace: C:\Users\rylie\Desktop\CODE PROJECTS\CS2 COMPLETED\cs2-main\Cargo.toml
+   Compiling controller v0.5.15 (C:\Users\rylie\Desktop\CODE PROJECTS\CS2 COMPLETED\cs2-main\controller)
+error[E0432]: unresolved import `crate::winver::VERSION`
+  --> controller\src\settings\ui.rs:55:5
+   |
+55 |     winver::VERSION,
+   |     ^^^^^^^^^^^^^^^ no `VERSION` in `winver`
+
+error[E0432]: unresolved import `crate::AppResources`
+  --> controller\src\enhancements\player\mod.rs:31:5
+   |
+31 |     AppResources,
+   |     ^^^^^^^^^^^^ no `AppResources` in the root
+
+error[E0432]: unresolved import `crate::AppResources`
+  --> controller\src\settings\esp.rs:20:5
+   |
+20 | use crate::AppResources;
+   |     ^^^^^^^^^^^^^^^^^^^ no `AppResources` in the root
+
+error[E0412]: cannot find type `AppResources` in this scope
+   --> controller\src\main.rs:162:20
+    |
+162 |     pub resources: AppResources,
+    |                    ^^^^^^^^^^^^ not found in this scope
+
+error[E0422]: cannot find struct, variant or union type `AppResources` in this scope
+   --> controller\src\main.rs:532:29
+    |
+532 |     let mut app_resources = AppResources {
+    |                             ^^^^^^^^^^^^ not found in this scope
+
+error[E0433]: failed to resolve: use of undeclared type `CharacterModel`
+   --> controller\src\main.rs:561:11
+    |
+561 |     match CharacterModel::load("character.glb") {
+    |           ^^^^^^^^^^^^^^ use of undeclared type `CharacterModel`
+    |
+help: consider importing this struct
+    |
+  5 + use crate::enhancements::model_renderer::CharacterModel;
+    |
+
+error[E0603]: module `player` is private
+  --> controller\src\settings\ui.rs:54:19
+   |
+54 |     enhancements::player::model_renderer::CharacterModel,
+   |                   ^^^^^^ private module
+   |
+help: consider importing this module through its public re-export instead:
+      crate::enhancements::model_renderer
+  --> controller\src\settings\ui.rs:54:5
+   |
+54 |     enhancements::player::model_renderer::CharacterModel,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: the module `player` is defined here
+  --> controller\src\enhancements\mod.rs:35:1
+   |
+35 | mod player;
+   | ^^^^^^^^^^^
+
+warning: unused import: `StateCacheType`
+  --> controller\src\main.rs:71:41
+   |
+71 | use utils_state::{StateRegistry, State, StateCacheType};
+   |                                         ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::f32::consts::PI`
+ --> controller\src\enhancements\player\mod.rs:6:5
+  |
+6 | use std::f32::consts::PI;
+  |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `UnitQuaternion`
+  --> controller\src\enhancements\player\mod.rs:17:34
+   |
+17 | use nalgebra::{Vector3, Matrix4, UnitQuaternion};
+   |                                  ^^^^^^^^^^^^^^
+
+warning: unused import: `windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState`
+  --> controller\src\enhancements\player\mod.rs:22:5
+   |
+22 | use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ImColor32`
+ --> controller\src\enhancements\player\info_layout.rs:5:5
+  |
+5 |     ImColor32,
+  |     ^^^^^^^^^
+
+warning: unused import: `imgui::DrawListMut`
+ --> controller\src\enhancements\player\model_renderer.rs:6:5
+  |
+6 | use imgui::DrawListMut;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Unit`
+  --> controller\src\enhancements\grenade_trajectory.rs:23:25
+   |
+23 | use nalgebra::{Vector3, Unit};
+   |                         ^^^^
+
+warning: unused import: `Read`
+   --> controller\src\enhancements\map_loader.rs:379:31
+    |
+379 |         use std::io::{Cursor, Read, Write};
+    |                               ^^^^
+
+warning: unused import: `Context`
+ --> controller\src\enhancements\legit_aim.rs:1:14
+  |
+1 | use anyhow::{Context, Result};
+  |              ^^^^^^^
+
+warning: unused import: `CCSPlayerController`
+ --> controller\src\enhancements\legit_aim.rs:6:41
+  |
+6 | use cs2_schema_generated::cs2::client::{CCSPlayerController, C_BaseEntity, C_CSPlayerPawn};
+  |                                         ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `btree_map::Entry` and `sync::atomic::Ordering`
+  --> controller\src\settings\ui.rs:5:9
+   |
+ 5 |         btree_map::Entry,
+   |         ^^^^^^^^^^^^^^^^
+...
+10 |     sync::atomic::Ordering,
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `cs2::StateBuildInfo`
+  --> controller\src\settings\ui.rs:14:5
+   |
+14 | use cs2::StateBuildInfo;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Image` and `TextureId`
+  --> controller\src\settings\ui.rs:18:5
+   |
+18 |     Image,
+   |     ^^^^^
+...
+22 |     TextureId,
+   |     ^^^^^^^^^
+
+warning: unused import: `rfd::FileDialog`
+  --> controller\src\settings\ui.rs:26:5
+   |
+26 | use rfd::FileDialog;
+   |     ^^^^^^^^^^^^^^^
+
+warning: unused imports: `UI::WindowsAndMessaging::FindWindowA` and `core::s`
+  --> controller\src\settings\ui.rs:33:5
+   |
+33 |     core::s,
+   |     ^^^^^^^
+34 |     Win32::{Foundation::HWND, UI::WindowsAndMessaging::FindWindowA},
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Color`, `EspBoxType`, `EspColorType`, `EspColor`, `EspHealthBar`, `EspPlayerSettings`, and `config_manager`
+  --> controller\src\settings\ui.rs:39:5
+   |
+39 |     config_manager,
+   |     ^^^^^^^^^^^^^^
+40 |     esp::{
+41 |         Color,
+   |         ^^^^^
+42 |         EspColor,
+   |         ^^^^^^^^
+43 |         EspColorType,
+   |         ^^^^^^^^^^^^
+...
+46 |         EspPlayerSettings,
+   |         ^^^^^^^^^^^^^^^^^
+47 |         EspBoxType,
+   |         ^^^^^^^^^^
+48 |         EspHealthBar,
+   |         ^^^^^^^^^^^^
+
+warning: unused import: `config_manager::*`
+  --> controller\src\settings\mod.rs:12:9
+   |
+12 | pub use config_manager::*;
+   |         ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `fs::*`
+  --> controller\src\utils\mod.rs:23:9
+   |
+23 | pub use fs::*;
+   |         ^^^^^
+
+warning: unused import: `C_CSPlayerPawnBase`
+  --> controller\src\view\crosshair.rs:12:5
+   |
+12 |     C_CSPlayerPawnBase,
+   |     ^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `set_cursor_pos_x` found for reference `&Ui` in the current scope
+   --> controller\src\settings\ui.rs:367:32
+    |
+367 | ...                   ui.set_cursor_pos_x((available_width - text_width) * 0.5);
+    |                          ^^^^^^^^^^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `ImguiUiEx` which provides `set_cursor_pos_x` is implemented but not in scope; perhaps you want to import it
+    |
+  3 + use crate::utils::imgui::ImguiUiEx;
+    |
+help: there is a method `set_cursor_pos_y` with a similar name
+    |
+367 -                             ui.set_cursor_pos_x((available_width - text_width) * 0.5);
+367 +                             ui.set_cursor_pos_y((available_width - text_width) * 0.5);
+    |
+
+error[E0609]: no field `esp` on type `&mut config::AppSettings`
+   --> controller\src\settings\ui.rs:448:46
+    |
+448 |         ui.checkbox("Enabled", &mut settings.esp.enabled);
+    |                                              ^^^ unknown field
+    |
+    = note: available fields are: `key_settings`, `key_settings_ignore_insert_warning`, `esp_mode`, `esp_toggle`, `esp_settings` ... and 30 others
+
+error[E0599]: no function or associated item named `create` found for struct `world::ViewController` in the current scope
+   --> controller\src\settings\ui.rs:535:51
+    |
+535 |         let mut view_controller = ViewController::create(view.into(), projection.into());
+    |                                                   ^^^^^^ function or associated item not found in `world::ViewController`
+    |
+   ::: controller\src\view\world.rs:17:1
+    |
+ 17 | pub struct ViewController {
+    | ------------------------- function or associated item `create` not found for this struct
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `State` which provides `create` is implemented but not in scope; perhaps you want to import it
+    |
+  3 + use utils_state::State;
+    |
+
+error[E0560]: struct `EspRenderInfo<'_>` has no field named `bone_screen_positions`
+   --> controller\src\settings\ui.rs:548:17
+    |
+548 |                 bone_screen_positions,
+    |                 ^^^^^^^^^^^^^^^^^^^^^ `EspRenderInfo<'_>` does not have this field
+    |
+    = note: available fields are: `bones`, `health`, `distance`, `name`, `weapon_name` ... and 5 others
+
+error[E0560]: struct `EspRenderInfo<'_>` has no field named `bbox`
+   --> controller\src\settings\ui.rs:549:17
+    |
+549 |                 bbox: None, 
+    |                 ^^^^ `EspRenderInfo<'_>` does not have this field
+    |
+    = note: available fields are: `bones`, `health`, `distance`, `name`, `weapon_name` ... and 5 others
+
+error[E0609]: no field `esp` on type `&mut config::AppSettings`
+   --> controller\src\settings\ui.rs:557:27
+    |
+557 |                 &settings.esp.player,
+    |                           ^^^ unknown field
+    |
+    = note: available fields are: `key_settings`, `key_settings_ignore_insert_warning`, `esp_mode`, `esp_toggle`, `esp_settings` ... and 30 others
+
+warning: variable does not need to be mutable
+   --> controller\src\enhancements\map_loader.rs:275:25
+    |
+275 |     fn build_linear_bvh(mut triangles: Vec<Triangle>) -> (Vec<Triangle>, Vec<LinearNode>) {
+    |                         ----^^^^^^^^^
+    |                         |
+    |                         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `handle`
+  --> controller\src\enhancements\legit_aim.rs:61:17
+   |
+61 |             let handle = entity_identity.handle::<()>()?;
+   |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_handle`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `a`
+   --> controller\src\settings\config.rs:141:69
+    |
+141 |             Self::AlphabeticalReverse => { values.sort_unstable_by(|a, b| b.name.cmp(&b.name)); }
+    |                                                                     ^ help: if this is intentional, prefix it with an underscore: `_a`
+
+Some errors have detailed explanations: E0412, E0422, E0432, E0433, E0560, E0599, E0603, E0609.
+For more information about an error, try `rustc --explain E0412`.
+warning: `controller` (bin "controller") generated 22 warnings
+error: could not compile `controller` (bin "controller") due to 13 previous errors; 22 warnings emitted

@@ -1,3 +1,5 @@
+// controller/src/settings/config.rs
+
 use directories::UserDirs;
 use std::{
     collections::{
@@ -40,7 +42,9 @@ use super::{
         EspBoxType,
         EspHeadDot,
         EspHealthBar,
-        EspTracePosition
+        EspTracePosition,
+        EspInfoStyle,
+        EspTextStyle,
     },
     HotKey,
 };
@@ -66,6 +70,26 @@ impl Default for SniperCrosshairSettings {
             outline: true,
             outline_thickness: 1.0,
             color: [255, 255, 255, 255],
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize, PartialEq)]
+pub struct GrenadeTrajectorySettings {
+    #[serde(default = "bool_true")]
+    pub enabled: bool,
+    #[serde(default = "default_color::<255, 255, 255, 255>")]
+    pub line_color: Color,
+    #[serde(default = "default_f32::<2, 1>")]
+    pub line_thickness: f32,
+}
+
+impl Default for GrenadeTrajectorySettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            line_color: default_color::<255, 255, 255, 255>(),
+            line_thickness: 2.0,
         }
     }
 }
@@ -114,7 +138,7 @@ impl GrenadeSortOrder {
     pub fn sort(&self, values: &mut Vec<&GrenadeSpotInfo>) {
         match self {
             Self::Alphabetical => { values.sort_unstable_by(|a, b| a.name.cmp(&b.name)); }
-            Self::AlphabeticalReverse => { values.sort_unstable_by(|a, b| b.name.cmp(&a.name)); }
+            Self::AlphabeticalReverse => { values.sort_unstable_by(|a, b| b.name.cmp(&b.name)); }
         }
     }
 }
@@ -165,6 +189,26 @@ pub struct GrenadeSettings {
     pub grenade_background: bool,
 }
 
+impl Default for GrenadeSettings {
+    fn default() -> Self {
+        Self {
+            active: bool_true(),
+            ui_sort_order: GrenadeSortOrder::default(),
+            circle_distance: default_f32::<150, 1>(),
+            circle_radius: default_f32::<20, 1>(),
+            circle_segments: default_usize::<32>(),
+            angle_threshold_yaw: default_f32::<1, 10>(),
+            angle_threshold_pitch: default_f32::<5, 10>(),
+            color_position: default_color::<255, 255, 255, 255>(),
+            color_position_active: default_color::<0, 255, 0, 255>(),
+            color_angle: default_color::<255, 0, 0, 255>(),
+            color_angle_active: default_color::<0, 255, 0, 255>(),
+            map_spots: HashMap::new(),
+            grenade_background: bool_true(),
+        }
+    }
+}
+
 with_prefix!(serde_prefix_grenade_helper "grenade_helper");
 
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
@@ -197,12 +241,20 @@ pub struct AppSettings {
     pub web_radar_advanced_settings: bool,
     pub sniper_crosshair: bool,
     pub sniper_crosshair_settings: SniperCrosshairSettings,
+    pub grenade_trajectory: GrenadeTrajectorySettings,
     #[serde(flatten, with = "serde_prefix_grenade_helper")]
     pub grenade_helper: GrenadeSettings,
+
+    // Legit Aim Settings
+    pub legit_aim_enabled: bool,
+    pub legit_aim_fov: f32,
+    pub legit_aim_smooth: f32,
+    pub legit_aim_key: Option<HotKey>,
+    pub legit_aim_bone: String,
+
     pub imgui: Option<String>,
 }
 
-// --- MODIFICATION START ---
 impl Default for AppSettings {
     fn default() -> Self {
         let white_color = EspColor::Static { value: Color::from_u8([255, 255, 255, 255]) };
@@ -220,14 +272,22 @@ impl Default for AppSettings {
             tracer_lines: EspTracePosition::None,
             tracer_lines_color: white_color,
             tracer_lines_width: 1.0,
+            
+            text_style: EspTextStyle::Shadow, // Default
+            text_outline_enabled: false,
+            text_outline_color: white_color,
+
             info_name: false,
             info_name_color: white_color,
             info_distance: false,
             info_distance_color: white_color,
             near_players: false,
             near_players_distance: 20.0,
+            
             info_weapon: false,
+            info_weapon_style: EspInfoStyle::Text,
             info_weapon_color: white_color,
+            
             info_ammo: false,
             info_ammo_color: white_color,
             info_hp_text: false,
@@ -242,16 +302,26 @@ impl Default for AppSettings {
             info_flag_bomb_color: white_color,
             info_grenades: false,
             info_grenades_color: white_color,
+            
+            // --- OFFSCREEN ARROWS (ADDED) ---
+            offscreen_arrows: false,
+            offscreen_arrows_color: white_color,
+            offscreen_arrows_radius: 300.0,
+            offscreen_arrows_size: 15.0,
+            // --------------------------------
+
             head_dot: EspHeadDot::NotFilled,
             head_dot_color: white_color,
             head_dot_thickness: 1.0,
-            head_dot_base_radius: 12.0, // Adjusted for preview
+            head_dot_base_radius: 12.0, 
             head_dot_z: 1.0,
+            chams: false,
+            chams_color: white_color,
         });
 
         let mut friendly_settings = enemy_settings;
         if let EspConfig::Player(ref mut p) = friendly_settings {
-            p.skeleton = false; // Typically don't need skeleton for friendlies
+            p.skeleton = false; 
         }
 
         Self {
@@ -288,28 +358,16 @@ impl Default for AppSettings {
             web_radar_advanced_settings: false,
             sniper_crosshair: true,
             sniper_crosshair_settings: Default::default(),
+            grenade_trajectory: GrenadeTrajectorySettings::default(),
             grenade_helper: GrenadeSettings::default(),
+
+            legit_aim_enabled: false,
+            legit_aim_fov: 100.0, // Pixel radius
+            legit_aim_smooth: 5.0,
+            legit_aim_key: Some(Key::MouseX1.into()), // Default to Mouse Button 4
+            legit_aim_bone: "head_0".to_string(),
+
             imgui: None,
-        }
-    }
-}
-// --- MODIFICATION END ---
-impl Default for GrenadeSettings {
-    fn default() -> Self {
-        Self {
-            active: bool_true(),
-            ui_sort_order: GrenadeSortOrder::default(),
-            circle_distance: default_f32::<150, 1>(),
-            circle_radius: default_f32::<20, 1>(),
-            circle_segments: default_usize::<32>(),
-            angle_threshold_yaw: default_f32::<1, 10>(),
-            angle_threshold_pitch: default_f32::<5, 10>(),
-            color_position: default_color::<255, 255, 255, 255>(),
-            color_position_active: default_color::<0, 255, 0, 255>(),
-            color_angle: default_color::<255, 0, 0, 255>(),
-            color_angle_active: default_color::<0, 255, 0, 255>(),
-            map_spots: HashMap::new(),
-            grenade_background: bool_true(),
         }
     }
 }

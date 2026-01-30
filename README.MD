@@ -25,7 +25,6 @@ Regardless of this limitation, LabHub supports the following features:
   - Bone selection (Head, Neck, Spine, Pelvis)
   - Activation key binding
 - **Visuals / ESP**  
-  - External radar (Publish your game for everybody on https://radar.valth.run)
   - Player ESP with configuration possibilities like: `Skeleton`, `Boxes3D` and `Boxes2D` 
   - Configurable colors to distinguish between enemy and team players
   - ESP includes player health, a health bar, weapon and a lot more
@@ -42,22 +41,10 @@ Regardless of this limitation, LabHub supports the following features:
   - **Stream Proof**: Never show your LabHub overlay on any screen shares or captures
   - **Watermark**: Optional overlay watermark
 
-To access LabHub settings overlay press `PAUSE`.
-
-# How to use / Getting started
-Please follow this guide to get started:  
-https://wiki.valth.run/getting-started/
+To access LabHub settings overlay press `insert`.
 
 # Troubleshooting
-If you are having issues mapping the kernel driver or starting the controller, please take a look [here](https://wiki.valth.run/category/troubleshooting):  
-https://wiki.valth.run/category/troubleshooting
-  
-The issue you encounter is most likely covered. If you still have any questions or need assistance, feel free to checkout the official LabHub Discord server ([click to join](https://discord.gg/9eP3VX5f)).
-
-# VAC
-The same considerations as mentioned in [this link](https://github.com/dretax/GarHal_CSGO#starting-driver) have been taken into account.  
-With these precautions and some minor improvements, such as omitting the LabHub identifier and using xor encryption for strings, the driver/overlay should avoid VAC detection. However, I must clarify that I haven't extensively studied VAC, so my conclusion is speculative. Personally, I have been using a C based driver/overlay like this with CSGO for several years without ever getting VAC banned. But be aware of overwatch!  
-With VAC live being enabled now, use this with caution. As always take the necessary precautions into consideration.
+If you are having any issues join the discord and shoot me a message or type in the general chat and @ me
 
 # Screenshots
 ![](./img/showcase_01.png)

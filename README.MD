@@ -15,12 +15,6 @@ That's a lot of descriptive words, but what does each of them mean?
 - `kernel` We do not use any user level WinAPIs in order to get information from the CS2 process
   
 This project is mainly a fun example for exploring the Windows Kernel with [Rust](https://www.rust-lang.org) and exploring the world of game enhancements :)
-
-# WARNING
-LabHub is **not** a plug 'n play solution.  
-Instead LabHub aims to achieve maximum stealth and stay invisible for other applications.  
-Please read [How to use](https://wiki.valth.run/getting-started/) carefully and try troubleshooting issues on your own.  
-
   
 # Features
 Due to LabHub being read-only (as of now), there are limitations on what features are possible to implement (eg. skin changer).

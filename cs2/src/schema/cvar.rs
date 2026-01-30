@@ -12,6 +12,9 @@ pub struct ConVar {
     #[field(offset = 0x00)]
     pub name: PtrCStr,
 
+    #[field(offset = 0x18)]
+    pub string_value: PtrCStr,
+
     #[field(offset = 0x20)]
     pub description: PtrCStr,
 

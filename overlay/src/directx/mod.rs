@@ -160,7 +160,7 @@ impl DirectXRenderBackend {
                 Width: window_size.0,
                 Height: window_size.1,
                 RefreshRate: DXGI_RATIONAL {
-                    Numerator: 60,
+                    Numerator: 0,
                     Denominator: 1,
                 },
                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -680,7 +680,7 @@ impl RenderBackend for DirectXRenderBackend {
                 perf.mark("directx_imgui");
                 if let Some(swap_chain) = &self.swap_chain {
                     unsafe {
-                        let _ = swap_chain.Present(1, 0);
+                        let _ = swap_chain.Present(0, 0);
                     }
                 }
                 perf.mark("directx_present");

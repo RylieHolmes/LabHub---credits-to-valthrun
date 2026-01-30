@@ -82,7 +82,11 @@ pub struct GrenadeTrajectorySettings {
     pub line_color: Color,
     #[serde(default = "default_f32::<2, 1>")]
     pub line_thickness: f32,
+    #[serde(default = "default_map_auto")]
+    pub selected_map: String,
 }
+
+fn default_map_auto() -> String { "Auto".to_string() }
 
 impl Default for GrenadeTrajectorySettings {
     fn default() -> Self {
@@ -90,6 +94,7 @@ impl Default for GrenadeTrajectorySettings {
             enabled: true,
             line_color: default_color::<255, 255, 255, 255>(),
             line_thickness: 2.0,
+            selected_map: default_map_auto(),
         }
     }
 }
@@ -252,6 +257,7 @@ pub struct AppSettings {
     pub legit_aim_key: Option<HotKey>,
     pub legit_aim_bone: String,
 
+    pub fps_limit: u32,
     pub imgui: Option<String>,
 }
 
@@ -367,6 +373,7 @@ impl Default for AppSettings {
             legit_aim_key: Some(Key::MouseX1.into()), // Default to Mouse Button 4
             legit_aim_bone: "head_0".to_string(),
 
+            fps_limit: 144,
             imgui: None,
         }
     }

@@ -1,5 +1,3 @@
-#![feature(array_try_from_fn)]
-#![feature(sync_unsafe_cell)]
 
 pub(crate) use cs2_schema_provider::runtime_offset;
 

@@ -76,16 +76,50 @@ impl ClassNameCache {
 
         let memory = cs2.create_memory_view();
 
-        let class_name = PtrCStr::read_object(
-            &*memory,
-            u64::read_object(&*memory, address + 0x30).map_err(|e| anyhow!(e))? + 0x08,
-        )
-        .map_err(|e| anyhow!(e))?
-        .read_string(&*memory)?
-        .context("failed to read class name")?;
+        // Safety wrapper: Try to read the pointer and string. If ANYTHING fails, just skip this entity.
+        // Do not propagate errors as it causes the main loop to stall.
+        let result: anyhow::Result<String> = (|| {
+            // Upstream Logic:
+            // let class_name = PtrCStr::read_object(
+            //     &*memory,
+            //     u64::read_object(&*memory, address + 0x08).map_err(|e| anyhow!(e))? + 0x00,
+            // )
+            
+            let designer_name_ptr_ptr = address + 0x08;
+            let designer_name_ptr = u64::read_object(&*memory, designer_name_ptr_ptr).map_err(|e| anyhow!(e))?;
 
-        self.lookup.insert(address, class_name.clone());
-        self.reverse_lookup.insert(class_name, address);
+            // Sanity check pointer (userland pointers are usually 0x0000 - 0x7FFF...)
+            // 0xCCCCCCCCCCCCCCCC is definitely invalid.
+            if designer_name_ptr < 0x1000 || designer_name_ptr > 0x7FFFFFFFFFFF {
+                return Err(anyhow!("Invalid designer_name_ptr: {:X}", designer_name_ptr));
+            }
+
+            let class_name = PtrCStr::read_object(
+                &*memory,
+                designer_name_ptr + 0x00, // Upstream uses + 0x00
+            )
+            .map_err(|e| anyhow!(e))?
+            .read_string(&*memory)
+            .map_err(|e| anyhow!(e))?
+            .context("failed to read class name string")?;
+            
+            Ok(class_name)
+        })();
+
+        match result {
+            Ok(class_name) => {
+                // println!("ClassNameCache: Success {:X} -> {}", address, class_name);
+                self.lookup.insert(address, class_name.clone());
+                self.reverse_lookup.insert(class_name, address);
+            }
+            Err(_e) => {
+                // Squelch the error. We can optionally log once per address if needed, but for now just ignore.
+                // Returning Ok(()) keeps the controller running effectively.
+                // println!("ClassNameCache: Failed {:X}: {}", address, _e);
+                return Ok(()); 
+            }
+        }
+
         Ok(())
     }
 

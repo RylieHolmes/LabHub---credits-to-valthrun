@@ -88,7 +88,7 @@ impl EspColor {
                 Self::interpolate_color(start.as_f32(), end.as_f32(), t)
             }
             Self::GradientVertical { top, bottom } => {
-                Self::interpolate_color(top.as_f32(), bottom.as_f32(), vertical_t.clamp(0.0, 1.0))
+                Self::interpolate_color(bottom.as_f32(), top.as_f32(), vertical_t.clamp(0.0, 1.0))
             }
         }
     }
@@ -356,10 +356,13 @@ impl EspSelector {
 
 pub struct EspRenderInfo<'a> {
     pub bones: &'a HashMap<String, [f32; 2]>,
+    pub model_bounds: Option<([f32; 2], [f32; 2])>,
+    pub skeleton_lines: Option<&'a Vec<([f32; 2], [f32; 2])>>,
     pub health: f32,
     pub distance: f32,
     pub name: &'a str,
     pub weapon_name: &'a str,
+    pub weapon_icon_name: Option<&'a str>,
     pub team_indicator: &'a str,
     pub is_scoped: bool,
     pub is_flashed: bool,
@@ -414,7 +417,7 @@ fn draw_image_with_thickness(
 
 pub fn draw_player_esp(
     draw_list: &DrawListMut,
-    _ui: &Ui,
+    ui: &Ui,
     settings: &EspPlayerSettings,
     info: &EspRenderInfo,
     _area_pos: [f32; 2],
@@ -435,9 +438,22 @@ pub fn draw_player_esp(
 
     if min_x == f32::MAX { return; }
 
-    let box_padding = 23.0;
-    let box_pos = [min_x - box_padding, min_y - box_padding];
-    let box_size = [(max_x - min_x) + box_padding * 2.0, (max_y - min_y) + box_padding * 2.0];
+    // Use model bounds if available, otherwise fallback to bones
+    let (box_pos, box_size) = if let Some((min, max)) = info.model_bounds {
+        // model bounds are exact screen pixels
+        // Add small padding like in-game usually does?
+        // Game code usually uses Hull Min/Max projected.
+        // Let's assume passed bounds are tight and add padding.
+        // Actually, player_2d_box in game uses Hull.
+        // Let's add standard padding.
+        let padding = 1.0; 
+        let width = max[0] - min[0];
+        let height = max[1] - min[1];
+        ([min[0] - padding, min[1] - padding], [width + padding * 2.0, height + padding * 2.0])
+    } else {
+        let box_padding = 23.0;
+        ([min_x - box_padding, min_y - box_padding], [(max_x - min_x) + box_padding * 2.0, (max_y - min_y) + box_padding * 2.0])
+    };
     
     let get_t = |y_pos: f32| -> f32 {
         let box_h = box_size[1];
@@ -469,97 +485,186 @@ pub fn draw_player_esp(
     }
 
     if settings.skeleton {
-        if let Some((texture_id, _)) = resources.esp_preview_skeleton_texture_id {
-            let t_skeleton = 0.5; 
-            let mut color = settings.skeleton_color.calculate_color(info.health, info.distance, time, t_skeleton);
-            color[3] *= alpha;
+        let t_skeleton = 0.5;
+        let mut color = settings.skeleton_color.calculate_color(info.health, info.distance, time, t_skeleton);
+        color[3] *= alpha;
 
-            let (mut body_min_x, mut body_min_y, mut body_max_x, mut body_max_y) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-            for (name, pos) in info.bones.iter() {
-                if name != "head" {
-                    body_min_x = body_min_x.min(pos[0]);
-                    body_min_y = body_min_y.min(pos[1]);
-                    body_max_x = body_max_x.max(pos[0]);
-                    body_max_y = body_max_y.max(pos[1]);
+        if let Some(lines) = info.skeleton_lines {
+             for (start, end) in lines {
+                 draw_list.add_line(*start, *end, color).thickness(settings.skeleton_width).build();
+             }
+        } else {
+            // Bone connections (parent -> child)
+            const BONE_PAIRS: &[(&str, &str)] = &[
+                ("head_0", "neck_0"),
+                ("neck_0", "spine_3"),
+                ("spine_3", "spine_2"),
+                ("spine_2", "spine_1"),
+                ("spine_1", "pelvis"),
+                ("spine_3", "arm_upper_L"), ("arm_upper_L", "arm_lower_L"), ("arm_lower_L", "hand_L"),
+                ("spine_3", "arm_upper_R"), ("arm_upper_R", "arm_lower_R"), ("arm_lower_R", "hand_R"),
+                ("pelvis", "leg_upper_L"), ("leg_upper_L", "leg_lower_L"), ("leg_lower_L", "ankle_L"),
+                ("pelvis", "leg_upper_R"), ("leg_upper_R", "leg_lower_R"), ("leg_lower_R", "ankle_R"),
+            ];
+
+            for (p, c) in BONE_PAIRS {
+                if let (Some(p_pos), Some(c_pos)) = (info.bones.get(*p), info.bones.get(*c)) {
+                    let mid_y = (p_pos[1] + c_pos[1]) / 2.0;
+                    let t = get_t(mid_y);
+                    let mut color = settings.skeleton_color.calculate_color(info.health, info.distance, time, 1.0 - t);
+                    color[3] *= alpha;
+                    draw_list.add_line(*p_pos, *c_pos, color).thickness(settings.skeleton_width).build();
                 }
-            }
-            
-            if body_min_x < f32::MAX {
-                let body_pos = [body_min_x, body_min_y];
-                let body_size = [body_max_x - body_min_x, body_max_y - body_min_y];
-                draw_image_with_thickness(draw_list, texture_id, body_pos, body_size, settings.skeleton_width, color);
             }
         }
     }
     
-    if let Some(head_pos) = info.bones.get("head") {
+    // Try both "head" (old) and "head_0" (new model)
+    if let Some(head_pos) = info.bones.get("head").or_else(|| info.bones.get("head_0")) {
         if settings.head_dot != EspHeadDot::None {
-            if let Some((texture_id, _)) = resources.esp_preview_head_texture_id {
-                let t_head = get_t(head_pos[1]);
-                let mut color = settings.head_dot_color.calculate_color(info.health, info.distance, time, t_head);
-                color[3] *= alpha;
+            let t_head = get_t(head_pos[1]);
+            let mut color = settings.head_dot_color.calculate_color(info.health, info.distance, time, t_head);
+            color[3] *= alpha;
 
-                let radius = settings.head_dot_base_radius;
-                let dot_pos = [head_pos[0] - radius, head_pos[1] - radius];
-                let dot_size = [radius * 2.0, radius * 2.0];
-
-                draw_image_with_thickness(draw_list, texture_id, dot_pos, dot_size, settings.head_dot_thickness, color);
+            let radius = (box_size[1] / 36.0) * settings.head_dot_base_radius * 0.95;
+            let circle = draw_list.add_circle([head_pos[0], head_pos[1]], radius, color);
+            
+            match settings.head_dot {
+                EspHeadDot::Filled => { circle.filled(true).build(); }
+                EspHeadDot::NotFilled => { circle.filled(false).thickness(settings.head_dot_thickness).build(); }
+                EspHeadDot::None => {}
             }
         }
     }
 
     if settings.box_type == EspBoxType::Box2D {
-        if let Some((texture_id, _)) = resources.esp_preview_box_texture_id {
-             if let EspColor::GradientVertical { top, bottom } = settings.box_color {
-                 let mut c_top = top.as_f32(); let mut c_bot = bottom.as_f32();
-                 c_top[3] *= alpha;
-                 c_bot[3] *= alpha;
-                 draw_list.add_rect_filled_multicolor(
-                     [box_pos[0], box_pos[1]], 
-                     [box_pos[0] + settings.box_width, box_pos[1] + box_size[1]], 
-                     c_top, c_top, c_bot, c_bot
-                 );
-                 draw_list.add_rect_filled_multicolor(
-                     [box_pos[0] + box_size[0] - settings.box_width, box_pos[1]], 
-                     [box_pos[0] + box_size[0], box_pos[1] + box_size[1]], 
-                     c_top, c_top, c_bot, c_bot
-                 );
-                 draw_list.add_rect(box_pos, [box_pos[0] + box_size[0], box_pos[1] + settings.box_width], c_top).filled(true).build();
-                 draw_list.add_rect([box_pos[0], box_pos[1] + box_size[1] - settings.box_width], [box_pos[0] + box_size[0], box_pos[1] + box_size[1]], c_bot).filled(true).build();
-             } else {
-                 let mut color = settings.box_color.calculate_color(info.health, info.distance, time, 0.0);
-                 color[3] *= alpha;
-                 draw_image_with_thickness(draw_list, texture_id, box_pos, box_size, settings.box_width, color);
-             }
-        }
+         if let EspColor::GradientVertical { top, bottom } = settings.box_color {
+             let mut c_top = top.as_f32(); let mut c_bot = bottom.as_f32();
+             c_top[3] *= alpha;
+             c_bot[3] *= alpha;
+             
+             // Top Line
+             draw_list.add_rect([box_pos[0], box_pos[1]], [box_pos[0] + box_size[0], box_pos[1] + settings.box_width], c_top).filled(true).build();
+             // Bottom Line
+             draw_list.add_rect([box_pos[0], box_pos[1] + box_size[1] - settings.box_width], [box_pos[0] + box_size[0], box_pos[1] + box_size[1]], c_bot).filled(true).build();
+             // Left Line
+             draw_list.add_rect_filled_multicolor([box_pos[0], box_pos[1]], [box_pos[0] + settings.box_width, box_pos[1] + box_size[1]], c_top, c_top, c_bot, c_bot);
+             // Right Line
+             draw_list.add_rect_filled_multicolor([box_pos[0] + box_size[0] - settings.box_width, box_pos[1]], [box_pos[0] + box_size[0], box_pos[1] + box_size[1]], c_top, c_top, c_bot, c_bot);
+
+         } else {
+             let mut color = settings.box_color.calculate_color(info.health, info.distance, time, 0.0);
+             color[3] *= alpha;
+             // Use standard rect instead of image
+             draw_list.add_rect(box_pos, [box_pos[0] + box_size[0], box_pos[1] + box_size[1]], color)
+                .thickness(settings.box_width)
+                .build();
+         }
     }
     
-    if settings.health_bar == EspHealthBar::Left {
-        if let Some((texture_id, _)) = resources.esp_preview_health_lr_texture_id {
-            let hp_percent = info.health.clamp(0.0, 1.0);
-            let bar_height = box_size[1];
-            let bar_width = settings.health_bar_width;
-            
-            let bar_pos = [box_pos[0] - bar_width - 2.0, box_pos[1]];
-            let bar_end_pos = [bar_pos[0] + bar_width, bar_pos[1] + bar_height];
-            
-            let mut color = settings.info_hp_text_color.calculate_color(info.health, info.distance, time, 0.5);
-            color[3] *= alpha;
-            
-            let p1 = [bar_pos[0], bar_pos[1] + bar_height * (1.0 - hp_percent)];
-            let p2 = [bar_end_pos[0], bar_pos[1] + bar_height * (1.0 - hp_percent)];
-            let p3 = bar_end_pos;
-            let p4 = [bar_pos[0], bar_end_pos[1]];
+    if settings.health_bar != EspHealthBar::None {
+        let hp_percent = info.health.clamp(0.0, 1.0);
+        let bar_width = settings.health_bar_width;
+        let gap = 2.0;
+        
+        let (rect_min, rect_max) = match settings.health_bar {
+            EspHealthBar::Left => {
+                let x = box_pos[0] - bar_width - gap;
+                ([x, box_pos[1]], [x + bar_width, box_pos[1] + box_size[1]])
+            },
+            EspHealthBar::Right => {
+                let x = box_pos[0] + box_size[0] + gap;
+                ([x, box_pos[1]], [x + bar_width, box_pos[1] + box_size[1]])
+            },
+            EspHealthBar::Top => {
+                let y = box_pos[1] - bar_width - gap;
+                ([box_pos[0], y], [box_pos[0] + box_size[0], y + bar_width])
+            },
+            EspHealthBar::Bottom => {
+                let y = box_pos[1] + box_size[1] + gap;
+                ([box_pos[0], y], [box_pos[0] + box_size[0], y + bar_width])
+            },
+            EspHealthBar::None => unreachable!(),
+        };
 
-            let uv1 = [0.0, 1.0 - hp_percent];
-            let uv2 = [1.0, 1.0 - hp_percent];
-            let uv3 = [1.0, 1.0];
-            let uv4 = [0.0, 1.0];
+        // Draw background
+        draw_list.add_rect(rect_min, rect_max, [0.0, 0.0, 0.0, 0.5 * alpha]).filled(true).build();
+        
+        // Draw fill
+        let mut color = settings.info_hp_text_color.calculate_color(info.health, info.distance, time, 0.5);
+        color[3] *= alpha;
 
-            draw_list.add_image_quad(texture_id, p1, p2, p3, p4)
-                .uv(uv1, uv2, uv3, uv4)
-                .col(color)
-                .build();
+        let (fill_min, fill_max) = match settings.health_bar {
+            EspHealthBar::Left | EspHealthBar::Right => {
+                let h = rect_max[1] - rect_min[1];
+                let fill_h = h * hp_percent;
+                ([rect_min[0], rect_max[1] - fill_h], rect_max)
+            },
+            EspHealthBar::Top | EspHealthBar::Bottom => {
+                let w = rect_max[0] - rect_min[0];
+                let fill_w = w * hp_percent;
+                (rect_min, [rect_min[0] + fill_w, rect_max[1]])
+            }
+            _ => (rect_min, rect_max),
+        };
+        
+        draw_list.add_rect(fill_min, fill_max, color).filled(true).build();
+        // Outline
+        draw_list.add_rect(rect_min, rect_max, [0.0, 0.0, 0.0, 1.0 * alpha]).thickness(1.0).build();
+    }
+
+    let mut cursor_y = box_pos[1] + box_size[1] + 4.0;
+    let box_center_x = box_pos[0] + box_size[0] / 2.0;
+
+    ui.set_window_font_scale(1.5);
+    if settings.info_name {
+        let mut color = settings.info_name_color.calculate_color(info.health, info.distance, time, 0.0);
+        color[3] *= alpha;
+        let width = ui.calc_text_size(info.name)[0];
+        let pos = [box_center_x - width / 2.0, cursor_y];
+        draw_list.add_text(pos, color, info.name);
+        cursor_y += 21.0;
+    }
+
+    if settings.info_ammo {
+        let mut color = settings.info_ammo_color.calculate_color(info.health, info.distance, time, 0.0);
+        color[3] *= alpha;
+        let text = "30/90";
+        let width = ui.calc_text_size(text)[0];
+        let pos = [box_center_x - width / 2.0, cursor_y];
+        draw_list.add_text(pos, color, text);
+        cursor_y += 21.0;
+    }
+
+    if settings.info_distance {
+        let mut color = settings.info_distance_color.calculate_color(info.health, info.distance, time, 0.0);
+        color[3] *= alpha;
+        let text = format!("{:.0}m", info.distance);
+        let width = ui.calc_text_size(&text)[0];
+        let pos = [box_center_x - width / 2.0, cursor_y];
+        draw_list.add_text(pos, color, text);
+        cursor_y += 21.0;
+    }
+
+    if settings.info_weapon {
+        let mut color = settings.info_weapon_color.calculate_color(info.health, info.distance, time, 0.0);
+        color[3] *= alpha;
+        
+        // Try to draw icon if available
+        let icon_key = info.weapon_icon_name.unwrap_or(info.weapon_name);
+        if let Some(tex_id) = resources.weapon_icons.get(icon_key) {
+             // Standard size roughly 20px height
+             let h = 38.25;
+             let w = h * 2.5; // Aspect ratio approx
+             let pos = [box_center_x - w / 2.0, cursor_y];
+             draw_list.add_image(*tex_id, pos, [pos[0] + w, pos[1] + h]).col(color).build();
+             cursor_y += h + 2.0;
+        } else {
+             let width = ui.calc_text_size(info.weapon_name)[0];
+             let pos = [box_center_x - width / 2.0, cursor_y];
+             draw_list.add_text(pos, color, info.weapon_name);
+             cursor_y += 21.0;
         }
     }
+    ui.set_window_font_scale(1.0);
 }

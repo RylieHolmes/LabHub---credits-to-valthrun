@@ -53,6 +53,9 @@ pub enum OverlayError {
 
     #[error("this feature is not supported by the current rendering backend")] // ADD THIS LINE
     NotSupported, // ADD THIS LINE
+
+    #[error("opengl error: {0}")]
+    OpenGLError(String),
 }
 
 #[derive(Error, Debug)]

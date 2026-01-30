@@ -1,5 +1,4 @@
-use anyhow::anyhow;
-use cs2_schema_cutl::CStringUtil;
+use cs2_schema_cutl::{CStringUtil, PtrCStr};
 use raw_struct::{
     builtins::Ptr64,
     FromMemoryView,
@@ -15,6 +14,7 @@ use crate::{
     CS2Offset,
     StateCS2Memory,
     StateResolvedOffset,
+    StateGlobals,
 };
 
 pub struct StateCurrentMap {
@@ -26,28 +26,37 @@ impl State for StateCurrentMap {
 
     fn create(states: &StateRegistry, _param: Self::Parameter) -> anyhow::Result<Self> {
         let memory_view = states.resolve::<StateCS2Memory>(())?;
-        let offset_network_game_client_instance =
-            states.resolve::<StateResolvedOffset>(CS2Offset::NetworkGameClientInstance)?;
+        
+        // Priority 1: GlobalVars (Fast & Reliable)
+        if let Ok(globals) = states.resolve::<StateGlobals>(()) {
+            if let Some(map) = globals.current_map_ptr().ok().and_then(|v| v.read_string(memory_view.view()).ok().flatten()) {
+                 if map.len() > 2 {
+                     let clean = map.replace("maps/", "").replace(".vpk", "");
+                     return Ok(Self { current_map: Some(clean) });
+                 }
+            }
+            if let Some(map) = globals.current_map_name_ptr().ok().and_then(|v| v.read_string(memory_view.view()).ok().flatten()) {
+                 if map.len() > 2 {
+                     let clean = map.replace("maps/", "").replace(".vpk", "");
+                     return Ok(Self { current_map: Some(clean) });
+                 }
+            }
+        }
 
-        let instance = Ptr64::<dyn CNetworkGameClient>::read_object(
-            memory_view.view(),
-            offset_network_game_client_instance.address,
-        )
-        .map_err(|e| anyhow!(e))?
-        .value_reference(memory_view.view_arc());
+        // Priority 2: NetworkGameClient standard read
+        if let Ok(offset_client) = states.resolve::<StateResolvedOffset>(CS2Offset::NetworkGameClientInstance) {
+             if let Ok(instance_ptr) = Ptr64::<dyn CNetworkGameClient>::read_object(memory_view.view(), offset_client.address) {
+                 if let Some(instance) = instance_ptr.value_reference(memory_view.view_arc()) {
+                     if let Some(map) = instance.map_name().ok().and_then(|v| v.read_string(memory_view.view()).ok().flatten()) {
+                         if map.len() > 2 {
+                              return Ok(Self { current_map: Some(map) });
+                         }
+                     }
+                 }
+             }
+        }
 
-        let Some(instance) = instance else {
-            /* client is currently connecting to somewhere */
-            return Ok(Self { current_map: None });
-        };
-
-        Ok(Self {
-            current_map: instance
-                .map_name()
-                .ok()
-                .map(|v| v.read_string(memory_view.view()).ok().flatten())
-                .flatten(),
-        })
+        Ok(Self { current_map: None })
     }
 
     fn cache_type() -> StateCacheType {

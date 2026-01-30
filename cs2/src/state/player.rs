@@ -251,6 +251,44 @@ pub struct StatePawnModelInfo {
     pub bone_states: Vec<BoneStateData>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct StatePawnModelAddress {
+    pub model_address: u64,
+}
+
+impl State for StatePawnModelAddress {
+    type Parameter = EntityHandle<dyn C_CSPlayerPawn>;
+
+    fn create(states: &StateRegistry, handle: Self::Parameter) -> anyhow::Result<Self> {
+        let memory = states.resolve::<StateCS2Memory>(())?;
+        let entities = states.resolve::<StateEntityList>(())?;
+        let Some(player_pawn) = entities.entity_from_handle(&handle) else {
+            anyhow::bail!("entity does not exists")
+        };
+        let player_pawn = player_pawn
+            .value_copy(memory.view())?
+            .context("player pawn nullptr")?;
+
+        let game_screen_node = player_pawn
+            .m_pGameSceneNode()?
+            .value_reference(memory.view_arc())
+            .context("game screen node nullptr")?
+            .cast::<dyn CSkeletonInstance>()
+            .copy()?;
+
+        let model_address = game_screen_node
+            .m_modelState()?
+            .m_hModel()?
+            .read_value(memory.view())?
+            .context("m_hModel nullptr")?
+            .address;
+        
+        Ok(Self { model_address })
+    }
+    
+    fn cache_type() -> StateCacheType { StateCacheType::Volatile }
+}
+
 impl State for StatePawnModelInfo {
     type Parameter = EntityHandle<dyn C_CSPlayerPawn>;
 

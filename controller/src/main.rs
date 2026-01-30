@@ -1,6 +1,6 @@
 // controller/src/main.rs
 
-#![windows_subsystem = "windows"] 
+// #![windows_subsystem = "windows"] 
 
 use image::GenericImageView;
 use imgui::TextureId;
@@ -89,6 +89,7 @@ use crate::{
         SniperCrosshair,
         GrenadeTrajectory,
         LegitAim,
+        model_renderer::CharacterModel,
     },
     settings::{
         save_app_settings,
@@ -104,7 +105,7 @@ mod utils;
 mod view;
 mod winver;
 // --- ADDED SECURITY MODULE ---
-mod security;
+// mod security; // DISABLED FOR UPSTREAM COMPATIBILITY
 
 pub trait MetricsClient {
     fn add_metrics_record(&self, record_type: &str, record_payload: &str);
@@ -160,6 +161,7 @@ pub struct AppFonts {
 
 #[derive(Clone)]
 pub struct AppResources {
+    pub character_model: Option<CharacterModel>,
     pub weapon_icons: HashMap<String, TextureId>,
     pub character_texture: Option<(TextureId, (u32, u32))>,
     pub cog_texture_id: Option<TextureId>,
@@ -311,7 +313,6 @@ impl Application {
 
         if let Ok(mut view_controller) = self.app_state.resolve_mut::<ViewController>(()) {
             view_controller.update_screen_bounds(mint::Vector2::from_slice(&ui.io().display_size));
-            view_controller.update(&self.app_state)?;
         }
 
         let update_context = UpdateContext {
@@ -336,6 +337,9 @@ impl Application {
         if !self.is_initialized.load(Ordering::Relaxed) {
             return;
         }
+
+        // Invalidate volatile state cache right before rendering to get freshest possible player positions
+        self.app_state.invalidate_states();
 
         ui.window("overlay").draw_background(false).no_decoration().no_inputs().size(ui.io().display_size, Condition::Always).position([0.0, 0.0], Condition::Always).build(|| self.render_overlay(ui, unicode_text));
 
@@ -422,7 +426,7 @@ fn map_imgui_key_to_vk(key: imgui::Key) -> VIRTUAL_KEY {
 
 fn main() {
     // --- ENABLE ANTI-DEBUGGING ---
-    security::fortify_process();
+    // security::fortify_process();
     // -----------------------------
 
     let args = match AppArgs::try_parse() {
@@ -451,11 +455,20 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
     log::info!("{} {}", obfstr!("Current executable was built on"), env!("BUILD_TIME"));
 
     unsafe {
-        use windows::Win32::System::Threading::{SetPriorityClass, GetCurrentProcess, HIGH_PRIORITY_CLASS};
-        if SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS).is_ok() {
+        use windows::Win32::System::Threading::{
+             SetPriorityClass, SetThreadPriority, GetCurrentProcess, GetCurrentThread, 
+             HIGH_PRIORITY_CLASS, REALTIME_PRIORITY_CLASS, THREAD_PRIORITY_HIGHEST
+        };
+        if SetPriorityClass(GetCurrentProcess(), REALTIME_PRIORITY_CLASS).as_bool() {
             log::info!("{}", obfstr!("Process priority set to HIGH."));
         } else {
             log::warn!("{}", obfstr!("Failed to set process priority to HIGH."));
+        }
+        
+        if SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST).as_bool() {
+             log::info!("{}", obfstr!("Thread priority set to HIGHEST."));
+        } else {
+             log::warn!("{}", obfstr!("Failed to set thread priority to HIGHEST."));
         }
     }
 
@@ -556,6 +569,7 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
     };
 
     let mut app_resources = AppResources {
+        character_model: None,
         weapon_icons: HashMap::new(),
         character_texture: None,
         cog_texture_id: None,
@@ -619,6 +633,11 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
         
         if app_resources.character_texture.is_none() {
              app_resources.character_texture = load_texture_with_dims("character.png");
+        }
+
+        match CharacterModel::load("character.glb") {
+            Ok(model) => app_resources.character_model = Some(model),
+            Err(e) => log::warn!("Failed to load character model: {}", e),
         }
     }
 
@@ -763,6 +782,7 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
             }
         },
         move |ui, unicode_text| {
+            let loop_start = Instant::now();
             let mut app = app.borrow_mut();
 
             if let Some((timeout, target)) = &update_timeout {
@@ -781,8 +801,35 @@ fn real_main(args: &AppArgs) -> anyhow::Result<()> {
                     update_fail_count += 1;
                 }
             }
+            
+            // Update View Matrix immediately before rendering to minimize latency
+            app.app_state.invalidate_states(); // Ensure we re-read volatile memory
+            if let Ok(mut view_controller) = app.app_state.resolve_mut::<ViewController>(()) {
+                 view_controller.update_screen_bounds(mint::Vector2::from_slice(&ui.io().display_size));
+                 if let Err(e) = view_controller.update(&app.app_state) {
+                     log::warn!("Failed to update view controller: {}", e);
+                 }
+            }
 
             app.render(ui, unicode_text);
+
+            let fps_limit = app.settings().fps_limit;
+            if fps_limit > 0 {
+                let target_frametime = Duration::from_micros(1_000_000 / fps_limit as u64);
+                let elapsed = loop_start.elapsed();
+                if elapsed < target_frametime {
+                    let remaining = target_frametime - elapsed;
+                    // Hybrid Sleep: Sleep if > 1.2ms remaining, Spin for the rest.
+                    // This saves massive CPU compared to pure spinning.
+                    if remaining.as_micros() > 1200 {
+                         std::thread::sleep(remaining - Duration::from_micros(1000));
+                    }
+                    while loop_start.elapsed() < target_frametime {
+                        std::hint::spin_loop();
+                    }
+                }
+            }
+
             true
         },
     );

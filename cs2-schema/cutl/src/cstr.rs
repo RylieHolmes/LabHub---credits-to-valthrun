@@ -53,7 +53,16 @@ impl CStringUtil for Ptr64<[i8]> {
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy)]
-pub struct PtrCStr(Ptr64<[i8]>);
+pub struct PtrCStr(pub Ptr64<[i8]>);
+
+impl PtrCStr {
+    pub fn new(address: u64) -> Self {
+        // Assuming Ptr64 is a transparent wrapper around u64 with PhantomData
+        // We can't access fields if they are private or we don't know them.
+        // But since we are hacking:
+        unsafe { std::mem::transmute(address) }
+    }
+}
 
 impl CStringUtil for PtrCStr {
     fn read_string(&self, memory: &dyn MemoryView) -> Result<Option<String>, AccessError> {

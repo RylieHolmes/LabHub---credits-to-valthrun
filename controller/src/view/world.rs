@@ -12,12 +12,29 @@ use utils_state::{
     StateRegistry,
 };
 
+/// Volatile state to ensure ViewMatrix is always fresh per frame
+pub struct StateViewMatrix {
+    pub matrix: nalgebra::Matrix4<f32>,
+}
+
+impl State for StateViewMatrix {
+    type Parameter = ();
+    fn create(states: &StateRegistry, _param: Self::Parameter) -> anyhow::Result<Self> {
+        let cs2 = states.resolve::<StateCS2Handle>(())?;
+        let offset = states.resolve::<StateResolvedOffset>(CS2Offset::ViewMatrix)?;
+        Ok(Self {
+            matrix: cs2.read_sized(offset.address)?,
+        })
+    }
+    fn cache_type() -> StateCacheType { StateCacheType::Volatile }
+}
+
 /// View controller which helps resolve in game
 /// coordinates into 2d screen coordinates.
 pub struct ViewController {
-    // --- CHANGE: Added 'pub' here so other modules can access the raw matrix ---
     pub view_matrix: nalgebra::Matrix4<f32>,
     pub screen_bounds: mint::Vector2<f32>,
+    pub offset: mint::Vector2<f32>,
 }
 
 impl State for ViewController {
@@ -27,6 +44,7 @@ impl State for ViewController {
         Ok(Self {
             view_matrix: Default::default(),
             screen_bounds: mint::Vector2 { x: 0.0, y: 0.0 },
+            offset: mint::Vector2 { x: 0.0, y: 0.0 },
         })
     }
 
@@ -35,9 +53,17 @@ impl State for ViewController {
     }
 
     fn update(&mut self, states: &StateRegistry) -> anyhow::Result<()> {
+        // Resolve the Volatile StateViewMatrix to get fresh data
+        let matrix_state = states.resolve::<StateViewMatrix>(())?;
+        self.view_matrix = matrix_state.matrix;
+        Ok(())
+    }
+}
+
+impl ViewController {
+    pub fn refresh_view_matrix(&mut self, states: &StateRegistry) -> anyhow::Result<()> {
         let cs2 = states.resolve::<StateCS2Handle>(())?;
         let offset = states.resolve::<StateResolvedOffset>(CS2Offset::ViewMatrix)?;
-
         self.view_matrix = cs2.read_sized(offset.address)?;
         Ok(())
     }
@@ -101,6 +127,10 @@ impl ViewController {
         ]);
         screen_pos.x = (screen_pos.x + 1.0) * self.screen_bounds.x / 2.0;
         screen_pos.y = (-screen_pos.y + 1.0) * self.screen_bounds.y / 2.0;
+
+        screen_pos.x += self.offset.x;
+        screen_pos.y += self.offset.y;
+
         Some(screen_pos)
     }
 

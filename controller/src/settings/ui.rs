@@ -13,6 +13,9 @@ use std::{
 
 use cs2::StateBuildInfo;
 use font_awesome;
+use nalgebra::{Matrix4, Vector3, Point3};
+use crate::view::ViewController;
+use crate::settings::esp::{draw_player_esp, EspRenderInfo};
 use imgui::{
     Condition,
     Image,
@@ -187,6 +190,7 @@ pub struct SettingsUI {
     is_first_render: bool,
     start_time: Instant,
     preview_layout: PreviewLayoutConfig,
+    preview_rotation: f32,
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -213,6 +217,7 @@ impl SettingsUI {
             is_first_render: true,
             start_time: Instant::now(),
             preview_layout: PreviewLayoutConfig::default(),
+            preview_rotation: 0.0,
         }
     }
 
@@ -562,10 +567,81 @@ impl SettingsUI {
                                 self.animated_checkbox(ui, "Bomb Site Label", &mut settings.bomb_label);
                                 
                                 self.animated_checkbox(ui, "Grenade Trajectory", &mut settings.grenade_trajectory.enabled);
+                                
+                                if settings.grenade_trajectory.enabled {
+                                    ui.indent();
+                                    
+                                    // Dynamic Map List
+                                    let mut maps: Vec<String> = Vec::new();
+                                    
+                                    // Scan "resources" directory
+                                    if let Ok(entries) = std::fs::read_dir("resources") {
+                                        for entry in entries.flatten() {
+                                            if let Ok(file_type) = entry.file_type() {
+                                                if file_type.is_file() {
+                                                    if let Some(name) = entry.file_name().to_str() {
+                                                        if name.ends_with(".glb") && name != "character.glb" {
+                                                            maps.push(name.trim_end_matches(".glb").to_string());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Also scan CWD for backward compatibility or if user put them there
+                                    if let Ok(entries) = std::fs::read_dir(".") {
+                                        for entry in entries.flatten() {
+                                            if let Ok(file_type) = entry.file_type() {
+                                                if file_type.is_file() {
+                                                    if let Some(name) = entry.file_name().to_str() {
+                                                        if name.ends_with(".glb") && name != "character.glb" {
+                                                            let map_name = name.trim_end_matches(".glb").to_string();
+                                                            if !maps.contains(&map_name) {
+                                                                 maps.push(map_name);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    maps.sort();
+                                    
+                                    if maps.is_empty() {
+                                        ui.text_colored([1.0, 0.0, 0.0, 1.0], "No .glb map files found!");
+                                    } else {
+                                        let current_map = &settings.grenade_trajectory.selected_map;
+                                        
+                                        // Handle "Auto" or invalid maps by defaulting to first available
+                                        let mut selected_idx = maps.iter().position(|m| m == current_map).unwrap_or(0);
+                                        
+                                        // Force update if "Auto" or empty
+                                        if current_map == "Auto" || current_map.is_empty() {
+                                             if let Some(first) = maps.first() {
+                                                 settings.grenade_trajectory.selected_map = first.clone();
+                                             }
+                                        }
+
+                                        ui.set_next_item_width(150.0);
+                                        if ui.combo("Map Selection", &mut selected_idx, &maps, |m| m.to_string().into()) {
+                                            settings.grenade_trajectory.selected_map = maps[selected_idx].clone();
+                                        }
+                                    }
+                                    
+                                    ui.unindent();
+                                }
                             }
                             ActiveTab::Overlay => {
                                 ui.text("Overlay");
                                 ui.separator();
+                                
+                                let mut start_fps = settings.fps_limit;
+                                ui.text("FPS Limit (0 = Unlimited)");
+                                if ui.slider_config("##fps_limit", 0, 1000).display_format("%d").build(&mut start_fps) {
+                                    settings.fps_limit = start_fps;
+                                }
+                                
                                 self.animated_checkbox(ui, "Spectators List", &mut settings.spectators_list);
                                 self.animated_checkbox(ui, "Watermark", &mut settings.labh_watermark);
             
@@ -1276,6 +1352,14 @@ impl SettingsUI {
         draw_list.add_rect(container_pos, container_end_pos, [0.07, 0.07, 0.09, 1.0 * alpha])
             .filled(true).rounding(4.0).build();
 
+        // --- INTERACTIVE ROTATION ---
+        ui.set_cursor_screen_pos(container_pos);
+        ui.invisible_button("preview_drag", container_size);
+        if ui.is_item_active() {
+            let delta = ui.io().mouse_delta[0];
+            self.preview_rotation += delta * 0.01;
+        }
+
         let target_selector = match self.esp_player_target_mode {
             PlayerTargetMode::Friendly => EspSelector::PlayerTeam { enemy: false },
             PlayerTargetMode::Enemy => EspSelector::PlayerTeam { enemy: true },
@@ -1288,172 +1372,170 @@ impl SettingsUI {
 
         if let EspConfig::Player(player_config) = config {
             
-            let mut anchor_center = [container_pos[0] + container_size[0] / 2.0, container_pos[1] + container_size[1] / 2.0];
-            let mut global_scale = 1.0f32;
-            
-            // Box dimensions for alignment logic
-            let mut box_visual_width = 200.0; 
-            let mut box_visual_height = 400.0;
-
-            // --- SCALE CALCULATION ---
-            if let Some((_, (w, h))) = app.resources.esp_preview_box_texture_id {
-                 let scale_pad = self.preview_layout.global_scale_pad;
-                 let img_aspect = w as f32 / h as f32;
-                 let container_aspect = container_size[0] / container_size[1];
-                 
-                 let (draw_w, draw_h) = if img_aspect > container_aspect {
-                     (container_size[0] * scale_pad, (container_size[0] * scale_pad) / img_aspect)
-                 } else {
-                     ((container_size[1] * scale_pad) * img_aspect, container_size[1] * scale_pad)
-                 };
- 
-                 global_scale = draw_w / w as f32;
-                 box_visual_width = draw_w;
-                 box_visual_height = draw_h;
-            } else if let Some((_, (w, h))) = app.resources.character_texture {
-                 let scale_pad = self.preview_layout.global_scale_pad;
-                 let img_aspect = w as f32 / h as f32;
-                 let container_aspect = container_size[0] / container_size[1];
-                 let (draw_w, _) = if img_aspect > container_aspect {
-                     (container_size[0] * scale_pad, (container_size[0] * scale_pad) / img_aspect)
-                 } else {
-                     ((container_size[1] * scale_pad) * img_aspect, container_size[1] * scale_pad)
-                 };
-                 global_scale = draw_w / w as f32;
-            }
-            
-            let box_left = anchor_center[0] - box_visual_width / 2.0;
-            let box_right = anchor_center[0] + box_visual_width / 2.0;
-            let box_top = anchor_center[1] - box_visual_height / 2.0;
-
-            // Helper: Center an image on the anchor point with optional XY offsets AND SCALE MODIFIER
-            let draw_centered = |res: Option<(TextureId, (u32, u32))>, color: [f32; 4], offset_x: f32, offset_y: f32, scale_mod: f32| {
-                 if let Some((tid, (orig_w, orig_h))) = res {
-                     let mut final_col = color;
-                     final_col[3] *= alpha;
-                     
-                     let effective_scale = global_scale * scale_mod;
-                     
-                     let item_w = orig_w as f32 * effective_scale;
-                     let item_h = orig_h as f32 * effective_scale;
-                     
-                     let p_min = [
-                         anchor_center[0] - item_w / 2.0 + (offset_x * global_scale), 
-                         anchor_center[1] - item_h / 2.0 + (offset_y * global_scale)
-                     ];
-                     let p_max = [p_min[0] + item_w, p_min[1] + item_h];
-                     
-                     draw_list.add_image(tid, p_min, p_max)
-                        .col(final_col)
-                        .build();
-                 }
-            };
-
-            // 1. Draw Character
-            if let Some((_, _)) = app.resources.character_texture {
-                draw_centered(app.resources.character_texture, [1.0, 1.0, 1.0, 1.0], 
-                    self.preview_layout.character_offset[0], self.preview_layout.character_offset[1], 
-                    self.preview_layout.character_scale);
-            }
-
-            // 2. Draw Box
-            if player_config.box_type != EspBoxType::None {
-                 let color = player_config.box_color.calculate_color(100.0, 10.0, 0.0, 0.5);
-                 draw_centered(app.resources.esp_preview_box_texture_id, color, 0.0, 0.0, 1.0);
-            }
-
-            // 3. Skeleton
-            if player_config.skeleton {
-                let color = player_config.skeleton_color.calculate_color(100.0, 10.0, 0.0, 0.5);
-                draw_centered(app.resources.esp_preview_skeleton_texture_id, color, 
-                    self.preview_layout.skeleton_offset[0], self.preview_layout.skeleton_offset[1],
-                    self.preview_layout.skeleton_scale);
-            }
-
-            // 4. Head Dot
-            if player_config.head_dot != EspHeadDot::None {
-                let color = player_config.head_dot_color.calculate_color(100.0, 10.0, 0.0, 0.5);
-                draw_centered(app.resources.esp_preview_head_texture_id, color, 
-                    self.preview_layout.head_offset[0], self.preview_layout.head_offset[1],
-                    self.preview_layout.head_scale); 
-            }
-
-            // 5. Health Bar
-            if player_config.health_bar != EspHealthBar::None {
-                let color = [0.0, 1.0, 0.0, 1.0]; 
+            // --- 3D RENDER SETUP ---
+            let model = app.resources.character_model.as_ref();
+            if let Some(model) = model {
+                // 1. Construct Camera / View Matrix
+                // Simple orbital camera: LookAt(0,0,0) from (r*sin(theta), 0, r*cos(theta))
+                let rotation = self.preview_rotation;
                 
-                let bar_padding = self.preview_layout.health_bar_padding * global_scale; 
+                // Scale model to fit in box. Container height ~ 400px?
+                // Model height in GLTF units ~ 180 units (cm).
+                // We want 180 units to cover ~80% of container height.
                 
-                let hb_scale = self.preview_layout.health_bar_scale;
+                // Camera setup
+                // Eye is at Z = -200 (looking forward along +Z usually, or -Z)
+                // Let's assume right-handed Y-up.
+                // Model is at 0,0,0.
+                
+                // We rotate the MODEL, not the camera.
+                // Model Transform:
+                // T = Translate(0, -90, 0) (Center vertically) -> RotateY(rotation)
+                
+                // Fix for horizontal orientation: Apply -90 degree rotation around Z-axis
+                // Fix for face down: Apply -90 degree rotation around X-axis
+                let correction_z = Matrix4::new_rotation(Vector3::z() * -90.0f32.to_radians());
+                let correction_x = Matrix4::new_rotation(Vector3::x() * -90.0f32.to_radians());
+                let correction = correction_x * correction_z;
+                
+                let model_rotation = Matrix4::new_rotation(Vector3::y() * (rotation + std::f32::consts::PI));
+                let model_translation = Matrix4::new_translation(&Vector3::new(0.0, -40.0, 0.0)); // Shift down slightly
+                let model_transform = model_translation * model_rotation * correction;
 
-                if let Some((tid, (w, h))) = app.resources.esp_preview_health_lr_texture_id {
-                    let bar_w = (w as f32 * global_scale) * hb_scale;
-                    let bar_h = (h as f32 * global_scale) * hb_scale;
+                // View Matrix: Camera at (0, 0, -300) looking at (0, 0, 0)
+                let eye = Point3::new(0.0, 0.0, -180.0);
+                let target = Point3::new(0.0, 0.0, 0.0);
+                let up = Vector3::new(0.0, -1.0, 0.0); // Y-down for screen coords? No, 3D usually Y-up.
+                // Wait, our projection will map to screen coords.
+                // Usually View matrix maps World -> Camera space.
+                // Projection maps Camera -> Clip -> NDC.
+                // Viewport maps NDC -> Screen.
+                
+                // Let's use standard LookAt.
+                // nalgebra LookAtRH: eye, target, up
+                let view_matrix = Matrix4::look_at_rh(&eye, &target, &Vector3::new(0.0, 1.0, 0.0));
+                
+                // Projection: Perspective
+                // Aspect ratio of container
+                let aspect = container_size[0] / container_size[1];
+                let fov = 45.0f32.to_radians();
+                let projection = Matrix4::new_perspective(aspect, fov, 1.0, 1000.0);
+                
+                // Composite ViewProj
+                // Note: ViewController stores 'view_matrix' which acts as ViewProjection (World -> Clip)
+                // In CS2 memory, it's usually MVP or VP.
+                // Here we construct VP.
+                // WE MUST TRANSPOSE IT because world_to_screen uses v.transpose() * M (treating M as row-major or expecting transpose)
+                let vp_matrix = (projection * view_matrix).transpose();
+                
+                // Create Dummy ViewController
+                let view_controller = ViewController {
+                    view_matrix: vp_matrix, // nalgebra is column-major.
+                    screen_bounds: mint::Vector2 { x: container_size[0], y: container_size[1] },
+                    offset: mint::Vector2 { x: container_pos[0], y: container_pos[1] },
+                };
+
+                // 2. Calculate Bone Transforms
+                // We apply model_transform to every bone (assuming bind pose is applied by ibms in shader logic)
+                // Actually, model_renderer.rs applies: joint_matrix = bone_transform * ibm.
+                // If we want the model to just rotate, 'bone_transform' should be 'model_transform * bind_matrix'.
+                // But we don't have bind_matrices easily (only ibms).
+                // However, we can just say 'bone_transform = model_transform * bind_matrix'.
+                // => joint_matrix = model_transform * bind_matrix * ibm = model_transform * I = model_transform.
+                // So if we pass 'model_transform' for ALL bones, the mesh will be rendered in bind pose, transformed by model_transform.
+                
+                let mut bone_transforms: HashMap<String, Matrix4<f32>> = HashMap::new();
+                for bone_name in model.mesh.joint_map.values() {
+                    // For bind pose rendering, we want joint_matrix = model_transform.
+                    // Since renderer does: joint_matrix = bone_transform * ibm
+                    // We need bone_transform * ibm = model_transform
+                    // => bone_transform = model_transform * inv(ibm) = model_transform * bind_matrix
+                    // But we don't have bind_matrix.
+                    // Wait, if we just want to draw the mesh rigidly (statue), we can just transform vertices?
+                    // The renderer enforces skinning.
                     
-                    let p_min = [
-                        box_left - bar_w - bar_padding, 
-                        anchor_center[1] - bar_h / 2.0
-                    ];
-                    let p_max = [p_min[0] + bar_w, p_min[1] + bar_h];
+                    // Actually, if we pass NO bone transforms, renderer uses Identity or Fallback.
+                    // If we pass Identity, joint_matrix = ibm. This distorts mesh to origin?
+                    // No. v' = (ibm * v). This is "inverse binding".
+                    
+                    // Correct approach for static mesh:
+                    // We need to calculate `bind_matrix` for each joint. `bind_matrix = ibm.try_inverse()`.
+                    // Then `bone_transform = model_transform * bind_matrix`.
+                    // Then `joint_matrix = model_transform * bind_matrix * ibm = model_transform`.
+                    // Perfect.
+                }
 
-                    match player_config.health_bar {
-                        EspHealthBar::Top | EspHealthBar::Bottom => {
-                             if let Some((bt_tid, (bt_w, bt_h))) = app.resources.esp_preview_health_bt_texture_id {
-                                let bt_scaled_w = (bt_w as f32 * global_scale) * hb_scale;
-                                let bt_scaled_h = (bt_h as f32 * global_scale) * hb_scale;
-                                // Bottom bar example
-                                let b_min = [anchor_center[0] - bt_scaled_w / 2.0, box_top + box_visual_height + bar_padding];
-                                let b_max = [b_min[0] + bt_scaled_w, b_min[1] + bt_scaled_h];
-                                let mut final_col = color; final_col[3] *= alpha;
-                                draw_list.add_image(bt_tid, b_min, b_max).col(final_col).build();
-                             }
-                        }
-                        _ => {
-                             let mut final_col = color; final_col[3] *= alpha;
-                             draw_list.add_image(tid, p_min, p_max).col(final_col).build();
+                // Optimization: Calculate inverses once or cache them?
+                // For preview, doing it every frame is fine (few bones).
+                
+                for (idx, ibm) in model.mesh.inverse_bind_matrices.iter().enumerate() {
+                    if let Some(bind_matrix) = ibm.try_inverse() {
+                        if let Some(name) = model.mesh.joint_map.get(&idx) {
+                             let final_transform = model_transform * bind_matrix;
+                             bone_transforms.insert(name.clone(), final_transform);
                         }
                     }
                 }
-            }
-            
-            // 6. Text Info (Name)
-            if player_config.info_name {
-                let color = player_config.info_name_color.calculate_color(100.0, 10.0, 0.0, 0.5);
-                if let Some((tid, (w, h))) = app.resources.esp_preview_name_texture_id {
-                    let name_scale = self.preview_layout.name_scale;
-                    let item_w = (w as f32 * global_scale) * name_scale;
-                    let item_h = (h as f32 * global_scale) * name_scale;
-                    
-                    let text_padding_x = self.preview_layout.name_padding[0] * global_scale;
-                    let text_padding_y = self.preview_layout.name_padding[1] * global_scale;
-                    
-                    let p_min = [box_right + text_padding_x, box_top + text_padding_y];
-                    let p_max = [p_min[0] + item_w, p_min[1] + item_h];
-                    
-                    let mut final_col = color; final_col[3] *= alpha;
-                    draw_list.add_image(tid, p_min, p_max).col(final_col).build();
+
+                // 3. Render Model
+                // Use a dark grey/blue color typical of CT character
+                let color = [0.3, 0.35, 0.4, 1.0 * alpha];
+                let model_bounds = model.render(&draw_list, &view_controller, &bone_transforms, color);
+
+                // 4. Project Bones to 2D for ESP
+                // We need 2D positions of bones to pass to draw_player_esp.
+                // The position of a bone in World Space is the translation part of `bone_transform` (which is model_transform * bind_matrix).
+                
+                let mut projected_bones: HashMap<String, [f32; 2]> = HashMap::new();
+                
+                for (name, transform) in &bone_transforms {
+                    let world_pos = Vector3::new(transform[(0,3)], transform[(1,3)], transform[(2,3)]);
+                    if let Some(screen_pos) = view_controller.world_to_screen(&world_pos, false) {
+                        projected_bones.insert(name.clone(), [screen_pos.x, screen_pos.y]);
+                    }
                 }
-            }
 
-            if player_config.info_weapon {
-                let color = player_config.info_weapon_color.calculate_color(100.0, 10.0, 0.0, 0.5);
-                draw_centered(app.resources.esp_preview_gun_texture_id, color, 
-                    self.preview_layout.weapon_offset[0], self.preview_layout.weapon_offset[1],
-                    self.preview_layout.weapon_scale);
-            }
+                // Generate Skeleton Lines from Hierarchy
+                // let mut skeleton_lines = Vec::new();
+                // for (child_idx, parent_idx) in &model.mesh.joint_parents {
+                // ... (Disabled to use manual BONE_PAIRS in esp.rs for cleaner look)
+                // }
 
-            if player_config.info_distance {
-                let color = player_config.info_distance_color.calculate_color(100.0, 10.0, 0.0, 0.5);
-                draw_centered(app.resources.esp_preview_distance_texture_id, color, 
-                    self.preview_layout.distance_offset[0], self.preview_layout.distance_offset[1],
-                    self.preview_layout.distance_scale);
-            }
+                // 5. Construct EspRenderInfo and Draw ESP
+                let render_info = EspRenderInfo {
+                    bones: &projected_bones,
+                    model_bounds,
+                    skeleton_lines: None,
+                    health: 0.92, 
+                    distance: 5.0, 
+                    name: "BOT Buckshot",
+                    weapon_name: "M4A1-S",
+                    weapon_icon_name: Some("m4a1_silencer"),
+                    team_indicator: "T",
+                    is_scoped: false,
+                    is_flashed: false,
+                    has_kit: true,
+                    has_bomb: false,
+                };
+                
+                // Draw Gradient Background (already drawn at start of function)
+                
+                // Call existing ESP drawing logic
+                let time = app.frame_read_calls as f32 / 60.0; // Approximation for animations
+                draw_player_esp(
+                    &draw_list,
+                    ui,
+                    player_config,
+                    &render_info,
+                    container_pos,
+                    container_size,
+                    alpha,
+                    &app.resources,
+                    time
+                );
 
-            if player_config.info_ammo {
-                 let color = player_config.info_ammo_color.calculate_color(100.0, 10.0, 0.0, 0.5);
-                 draw_centered(app.resources.esp_preview_ammo_texture_id, color, 
-                    self.preview_layout.ammo_offset[0], self.preview_layout.ammo_offset[1],
-                    self.preview_layout.ammo_scale);
+            } else {
+                ui.text("Loading 3D Model...");
             }
         }
     }

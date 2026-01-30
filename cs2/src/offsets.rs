@@ -123,7 +123,7 @@ impl CS2Offset {
                 Module::Schemasystem,
                 Signature::relative_address(
                     obfstr!("schema system instance"),
-                    obfstr!("48 8B 0D ? ? ? ? 48 8B 55 A0"),
+                    obfstr!("48 8D 05 ? ? ? ? C3"),
                     0x03,
                     0x07,
                 ),

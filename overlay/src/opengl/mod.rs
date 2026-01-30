@@ -109,8 +109,30 @@ impl RenderBackend for OpenGLRenderBackend {
     }
 
     // ADDED: Stub implementation for the new trait method.
-    unsafe fn add_texture(&mut self, _data: &[u8], _width: u32, _height: u32) -> Result<TextureId> {
-        Err(OverlayError::NotSupported)
+    unsafe fn add_texture(&mut self, data: &[u8], width: u32, height: u32) -> Result<TextureId> {
+        let gl = glow_context(&self.context);
+        let texture = gl.create_texture().map_err(OverlayError::OpenGLError)?;
+        
+        gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MIN_FILTER, glow::LINEAR as i32);
+        gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
+        
+        gl.tex_image_2d(
+            glow::TEXTURE_2D,
+            0,
+            glow::RGBA as i32,
+            width as i32,
+            height as i32,
+            0,
+            glow::RGBA,
+            glow::UNSIGNED_BYTE,
+            Some(data),
+        );
+        
+        gl.bind_texture(glow::TEXTURE_2D, None);
+        
+        // Convert glow::NativeTexture (NonZeroU32) to TextureId (usize)
+        Ok(TextureId::new(texture.0.get() as usize))
     }
 }
 

@@ -94,7 +94,7 @@ pub struct MapMesh {
 
 impl MapMesh {
     // Helper to find the file in common locations
-    fn resolve_path(filename: &str) -> Option<PathBuf> {
+    pub fn resolve_path(filename: &str) -> Option<PathBuf> {
         // 1. Check absolute path or current working directory
         let p = PathBuf::from(filename);
         if p.exists() { return Some(p); }
@@ -119,6 +119,9 @@ impl MapMesh {
         // Often cargo run is executed from workspace root, but file is in crate root
         let p_controller = PathBuf::from("controller").join(filename);
         if p_controller.exists() { return Some(p_controller); }
+
+        let p_controller_res = PathBuf::from("controller").join("resources").join(filename);
+        if p_controller_res.exists() { return Some(p_controller_res); }
 
         None
     }
@@ -180,9 +183,13 @@ impl MapMesh {
         let mut raw_triangles = Vec::new();
 
         // GLTF is Y-Up, -Z Forward. Source 2 is Z-Up, +X Forward.
-        // Transform: Rotate 180 degrees from previous attempt.
-        // Previous: (-z, -x, y)
-        // New: (z, x, y)
+        // Corrections applied:
+        // 1. Convert to inches
+        // 2. Map coordinates based on empirical testing (90 deg rotation fix)
+        // Previous was (x, -z, y). Applying +90 deg yaw: x' = -y, y' = x
+        // x_new = -(-z) = z
+        // y_new = x
+        // z_new = y
         let to_source2 = |p: Vector3<f32>| -> Vector3<f32> {
             const METERS_TO_INCHES: f32 = 39.3700787;
             Vector3::new(p.z, p.x, p.y) * METERS_TO_INCHES

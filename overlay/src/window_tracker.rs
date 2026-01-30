@@ -157,7 +157,10 @@ impl WindowTracker {
             ClientToScreen(self.target_hwnd, &mut rect.right as *mut _ as *mut POINT);
         }
 
-        if unsafe { GetFocus() } != self.target_hwnd {
+        let focus_hwnd = unsafe { GetFocus() };
+        let has_focus = focus_hwnd == self.target_hwnd;
+        
+        if !has_focus {
             /*
              * CS2 will render a black screen as soon as CS2 does not have the focus and is completely covered by
              * another window. To prevent the overlay covering CS2 we make it one pixel less then the actual CS2 window.
@@ -170,7 +173,7 @@ impl WindowTracker {
         }
 
         self.current_bounds = rect;
-        log::debug!("Window bounds changed: {:?}", rect);
+        log::info!("Window resize: {:?} -> {:?}. Focus: {} (Target: {:?}, Actual: {:?})", self.current_bounds, rect, has_focus, self.target_hwnd, focus_hwnd);
         unsafe {
             MoveWindow(
                 self.overlay_hwnd,

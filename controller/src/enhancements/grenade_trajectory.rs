@@ -151,25 +151,56 @@ impl Enhancement for GrenadeTrajectory {
         }
 
         // Map Loading Logic
-        if let Ok(map_state) = ctx.states.resolve::<StateCurrentMap>(()) {
-            if let Some(map_name) = &map_state.current_map {
-                if map_name != "<empty>" && self.current_map_name.as_ref() != Some(map_name) {
-                    log::info!("Map changed to: {}", map_name);
-                    self.current_map_name = Some(map_name.clone());
-                    let glb_path = format!("{}.glb", map_name);
-                    match MapMesh::load(&glb_path) {
-                        Ok(mesh) => {
-                            log::info!("Loaded collision mesh: {}", glb_path);
-                            self.map_mesh = Some(mesh);
-                        },
-                        Err(e) => {
-                            log::warn!("Failed to load collision mesh for {}: {:#}", map_name, e);
-                            self.map_mesh = None;
-                        }
-                    }
-                }
+        // Map Loading Logic
+        let selected_map = &settings.grenade_trajectory.selected_map;
+        
+        let target_map = if selected_map != "Auto" {
+            Some(selected_map.clone())
+        } else {
+            // Auto mode
+            if let Ok(map_state) = ctx.states.resolve::<StateCurrentMap>(()) {
+                map_state.current_map.clone()
+            } else {
+                None
             }
+        };
+
+        // Determine final map to try loading (with fallback)
+        let final_map = target_map.or_else(|| {
+             // Only fallback if we haven't loaded ANYTHING yet
+             if self.current_map_name.is_none() {
+                 Some("de_mirage".to_string())
+             } else {
+                 None
+             }
+        });
+
+        if let Some(map_name) = final_map {
+             if map_name != "<empty>" && self.current_map_name.as_ref() != Some(&map_name) {
+                 log::info!("Map switch requested: {}", map_name);
+                 self.current_map_name = Some(map_name.clone());
+                 
+                 let resources_path = format!("resources/{}.glb", map_name);
+                 let cwd_path = format!("{}.glb", map_name);
+                 
+                 let glb_path = if std::path::Path::new(&resources_path).exists() {
+                     resources_path
+                 } else {
+                     cwd_path
+                 };
+                 match MapMesh::load(&glb_path) {
+                     Ok(mesh) => {
+                         log::info!("Loaded collision mesh: {}", glb_path);
+                         self.map_mesh = Some(mesh);
+                     },
+                     Err(e) => {
+                         log::warn!("Failed to load collision mesh for {}: {:#}", map_name, e);
+                         self.map_mesh = None;
+                     }
+                 }
+             }
         }
+
 
         let memory = ctx.states.resolve::<StateCS2Memory>(())?;
         let entities = ctx.states.resolve::<StateEntityList>(())?;
@@ -433,18 +464,6 @@ impl Enhancement for GrenadeTrajectory {
             if let Some(center_screen) = view.world_to_screen(landing_pos, true) {
                 draw.add_circle([center_screen.x, center_screen.y], 3.0, outline_color).filled(true).build();
             }
-        }
-
-        // Debug Text
-        if self.debug_draw_mesh {
-             ui.window("Grenade Debug")
-                .always_auto_resize(true)
-                .build(|| {
-                    ui.text(format!("Weapon: {:?} (ID: {:?})", self.last_logged_wid, self.last_logged_wid.map(|w| w as u32)));
-                    ui.text(format!("Type: {:?}", self.active_type));
-                    ui.text(format!("Points: {}", trajectory.len()));
-                    ui.text(format!("Map: {:?}", self.current_map_name));
-                });
         }
 
         Ok(())

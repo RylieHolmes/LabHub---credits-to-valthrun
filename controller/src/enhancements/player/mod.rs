@@ -1,25 +1,23 @@
 // controller/src/enhancements/player/mod.rs
 
-use utils_state::State;
 use std::collections::HashMap;
 use std::time::Instant;
-use std::f32::consts::PI;
 
 use anyhow::Result;
 use cs2::{
     BoneFlags, CEntityIdentityEx, CS2Model, ClassNameCache, LocalCameraControllerTarget,
     PlayerPawnState, StateCS2Memory, StateEntityList, StateLocalPlayerController, StatePawnInfo,
-    StatePawnModelInfo,
+    StatePawnModelInfo, StatePawnModelAddress, WeaponId
 };
-use cs2_schema_generated::cs2::client::C_CSPlayerPawn;
+use cs2_schema_cutl::EntityHandle;
+use cs2_schema_generated::cs2::client::C_BaseEntity;
+use cs2_schema_generated::cs2::client::CCSPlayerController;
 use imgui::Ui;
 use info_layout::{PlayerInfoLayout, LayoutAlignment, ColorContext};
-use nalgebra::{Vector3, Matrix4, UnitQuaternion};
+use nalgebra::{Vector3, Matrix4};
 use obfstr::obfstr;
 use overlay::UnicodeTextRenderer;
 use utils_state::StateRegistry;
-
-use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 
 use super::Enhancement;
 use crate::{
@@ -36,11 +34,7 @@ pub mod model_renderer;
 use model_renderer::CharacterModel;
 
 struct PlayerData {
-    pawn_info: StatePawnInfo,
-    pawn_model: StatePawnModelInfo,
-    previous_position: Vector3<f32>,
-    current_position: Vector3<f32>,
-    last_update_time: Instant,
+    pawn_handle: u32,
     bone_transforms: HashMap<String, Matrix4<f32>>,
 }
 
@@ -56,73 +50,71 @@ fn lerp(start: Vector3<f32>, end: Vector3<f32>, t: f32) -> Vector3<f32> {
     start + (end - start) * t
 }
 
-fn map_weapon_to_icon(display_name: &str) -> String {
-    let lower = display_name.to_lowercase();
-    match lower.as_str() {
-        "knife (t)" => "knife_t".to_string(),
-        "knife" => "knife".to_string(),
-        "bayonet" => "bayonet".to_string(),
-        "butterfly knife" => "knife_butterfly".to_string(),
-        "classic knife" => "knife_css".to_string(),
-        "cord knife" => "knife_cord".to_string(),
-        "falchion knife" => "knife_falchion".to_string(),
-        "flip knife" => "knife_flip".to_string(),
-        "gut knife" => "knife_gut".to_string(),
-        "huntsman knife" => "knife_tactical".to_string(),
-        "karambit" => "knife_karambit".to_string(),
-        "m9 bayonet" => "knife_m9_bayonet".to_string(),
-        "navaja knife" => "knife_gypsy_jackknife".to_string(),
-        "nomad knife" => "knife_outdoor".to_string(),
-        "shadow daggers" => "knife_push".to_string(),
-        "skeleton knife" => "knife_skeleton".to_string(),
-        "stiletto knife" => "knife_stiletto".to_string(),
-        "survival knife" => "knife_survival_bowie".to_string(),
-        "talon knife" => "knife_widowmaker".to_string(),
-        "ursus knife" => "knife_ursus".to_string(),
-        "bowie knife" => "knife_survival_bowie".to_string(),
-        "desert eagle" => "deagle".to_string(),
-        "r8 revolver" => "revolver".to_string(),
-        "cz75-auto" => "cz75a".to_string(),
-        "dual berettas" => "elite".to_string(),
-        "p2000" => "hkp2000".to_string(),
-        "glock-18" => "glock".to_string(),
-        "p250" => "p250".to_string(),
-        "five-seven" => "fiveseven".to_string(),
-        "tec-9" => "tec9".to_string(),
-        "usp-s" => "usp_silencer".to_string(),
-        "m4a1-s" => "m4a1_silencer".to_string(),
-        "m4a4" => "m4a1".to_string(),
-        "ak-47" => "ak47".to_string(),
-        "galil ar" => "galilar".to_string(),
-        "famas" => "famas".to_string(),
-        "aug" => "aug".to_string(),
-        "sg 553" => "sg556".to_string(),
-        "ssg 08" => "ssg08".to_string(),
-        "awp" => "awp".to_string(),
-        "g3sg1" => "g3sg1".to_string(),
-        "scar-20" => "scar20".to_string(),
-        "mac-10" => "mac10".to_string(),
-        "mp5-sd" => "mp5sd".to_string(),
-        "ump-45" => "ump451".to_string(),
-        "pp-bizon" => "bizon".to_string(),
-        "mp7" => "mp7".to_string(),
-        "mp9" => "mp9".to_string(),
-        "p90" => "p90".to_string(),
-        "mag-7" => "mag7".to_string(),
-        "nova" => "nova".to_string(),
-        "sawed-off" => "sawedoff".to_string(),
-        "xm1014" => "xm1014".to_string(),
-        "m249" => "m249".to_string(),
-        "negev" => "negev".to_string(),
-        "zeus x27" => "taser".to_string(),
-        "high explosive grenade" | "he grenade" => "hegrenade".to_string(),
-        "smoke grenade" => "smokegrenade".to_string(),
-        "flashbang" => "flashbang".to_string(),
-        "molotov" => "molotov".to_string(),
-        "incendiary grenade" => "incgrenade0".to_string(),
-        "decoy grenade" => "decoy".to_string(),
-        "c4 explosive" => "c4".to_string(),
-        _ => lower.replace(|c: char| !c.is_alphanumeric(), ""),
+fn map_weapon_to_icon(weapon: WeaponId) -> &'static str {
+    match weapon {
+        WeaponId::KnifeT => "knife_t",
+        WeaponId::Knife => "knife",
+        WeaponId::KnifeBayonet => "bayonet",
+        WeaponId::KnifeButterfly => "knife_butterfly",
+        WeaponId::KnifesClassic => "knife_css",
+        WeaponId::KnifeCord => "knife_cord",
+        WeaponId::KnifeFalchion => "knife_falchion",
+        WeaponId::KnifeFlip => "knife_flip",
+        WeaponId::KnifeGut => "knife_gut",
+        WeaponId::KnifeTactical => "knife_tactical",
+        WeaponId::KnifeKarambit => "knife_karambit",
+        WeaponId::KnifeM9Bayonet => "knife_m9_bayonet",
+        WeaponId::KnifesNavaja => "knife_gypsy_jackknife",
+        WeaponId::KnifesNomad => "knife_outdoor",
+        WeaponId::KnifePush => "knife_push",
+        WeaponId::KnifesSkeleton => "knife_skeleton",
+        WeaponId::KnifesStiletto => "knife_stiletto",
+        WeaponId::KnifeSurvivalBowie | WeaponId::KnifeSurvival => "knife_survival_bowie",
+        WeaponId::KnifesTalon => "knife_widowmaker",
+        WeaponId::KnifeUrsus => "knife_ursus",
+        WeaponId::Deagle => "deagle",
+        WeaponId::Revolver => "revolver",
+        WeaponId::CZ75a => "cz75a",
+        WeaponId::Elite => "elite",
+        WeaponId::HKP200 => "hkp2000",
+        WeaponId::Glock => "glock",
+        WeaponId::P250 => "p250",
+        WeaponId::FiveSeven => "fiveseven",
+        WeaponId::Tec9 => "tec9",
+        WeaponId::USPS => "usp_silencer",
+        WeaponId::M4A1Silencer => "m4a1_silencer",
+        WeaponId::M4A4 => "m4a1",
+        WeaponId::Ak47 => "ak47",
+        WeaponId::Galilar => "galilar",
+        WeaponId::Famas => "famas",
+        WeaponId::Aug => "aug",
+        WeaponId::Sg553 => "sg556",
+        WeaponId::Ssg08 => "ssg08",
+        WeaponId::AWP => "awp",
+        WeaponId::G3SG1 => "g3sg1",
+        WeaponId::Scar20 => "scar20",
+        WeaponId::Mac10 => "mac10",
+        WeaponId::MP5SD => "mp5sd",
+        WeaponId::Ump45 => "ump451",
+        WeaponId::Bizon => "bizon",
+        WeaponId::MP7 => "mp7",
+        WeaponId::MP9 => "mp9",
+        WeaponId::P90 => "p90",
+        WeaponId::Mag7 => "mag7",
+        WeaponId::Nova => "nova",
+        WeaponId::SawedOff => "sawedoff",
+        WeaponId::XM1014 => "xm1014",
+        WeaponId::M249 => "m249",
+        WeaponId::Negev => "negev",
+        WeaponId::Taser => "taser",
+        WeaponId::HZgrenade => "hegrenade",
+        WeaponId::Smokegrenade => "smokegrenade",
+        WeaponId::Flashbang => "flashbang",
+        WeaponId::Molotov => "molotov",
+        WeaponId::Incendiary => "incgrenade0",
+        WeaponId::Decoy => "decoy",
+        WeaponId::C4 => "c4",
+        _ => "",
     }
 }
 
@@ -196,33 +188,26 @@ impl Enhancement for PlayerESP {
         let mut valid_player_handles = std::collections::HashSet::new();
 
         for entity_identity in entities.entities() {
-            let handle = entity_identity.handle::<dyn C_CSPlayerPawn>()?;
-            let entity_index = handle.get_entity_index();
-
+            let entity_class = class_name_cache.lookup(&entity_identity.entity_class_info()?)?;
+            if !entity_class.map(|name| *name == "CCSPlayerController").unwrap_or(false) { continue; }
+            
+            let controller_handle = entity_identity.handle::<dyn CCSPlayerController>()?;
+            let Some(controller_ptr) = entities.entity_from_handle(&controller_handle) else { continue; };
+            let Some(controller) = controller_ptr.value_reference(memory.view_arc()) else { continue; };
+            
+            let pawn_handle = controller.m_hPlayerPawn()?;
+            if !pawn_handle.is_valid() { continue; }
+            
+            let entity_index = pawn_handle.get_entity_index();
             if entity_index == view_target_entity_id { continue; }
 
-            let entity_class = class_name_cache.lookup(&entity_identity.entity_class_info()?)?;
-            if !entity_class.map(|name| *name == "C_CSPlayerPawn").unwrap_or(false) { continue; }
-            let pawn_state = ctx.states.resolve::<PlayerPawnState>(handle)?;
+            // Only validate player is alive - don't cache any state, we'll read fresh at render time
+            let pawn_state = ctx.states.resolve::<PlayerPawnState>(pawn_handle)?;
             if *pawn_state != PlayerPawnState::Alive { continue; }
-            let pawn_info = ctx.states.resolve::<StatePawnInfo>(handle)?;
-            if pawn_info.player_health <= 0 || pawn_info.player_name.is_none() { continue; }
-            let Ok(pawn_model) = ctx.states.resolve::<StatePawnModelInfo>(handle) else { continue; };
 
             valid_player_handles.insert(entity_index);
-            let now = Instant::now();
-            self.players.entry(entity_index).and_modify(|entry| { 
-                entry.previous_position = entry.current_position; 
-                entry.current_position = pawn_info.position; 
-                entry.pawn_info = pawn_info.clone(); 
-                entry.pawn_model = pawn_model.clone(); 
-                entry.last_update_time = now; 
-            }).or_insert_with(|| PlayerData { 
-                previous_position: pawn_info.position, 
-                current_position: pawn_info.position, 
-                pawn_info: pawn_info.clone(), 
-                pawn_model: pawn_model.clone(), 
-                last_update_time: now,
+            self.players.entry(entity_index).or_insert_with(|| PlayerData { 
+                pawn_handle: entity_index,
                 bone_transforms: HashMap::new(),
             });
         }
@@ -239,8 +224,10 @@ impl Enhancement for PlayerESP {
         if !self.toggle.enabled { return Ok(()); }
         
         let Ok(mut view) = states.resolve_mut::<ViewController>(()) else { return Ok(()); };
-        (*view).update(states)?;
         
+        // Refresh view matrix to get fresh data at render time (not cached from update phase)
+        view.refresh_view_matrix(states)?;
+
         let camera_position = match view.get_camera_world_position() {
             Some(pos) => pos,
             None => return Ok(())
@@ -248,6 +235,8 @@ impl Enhancement for PlayerESP {
 
         let settings = states.resolve::<AppSettings>(())?;
         let app_resources = states.resolve::<AppResources>(()).ok();
+        let memory = states.resolve::<StateCS2Memory>(())?;
+        let entities = states.resolve::<StateEntityList>(())?;
 
         let draw = ui.get_window_draw_list();
         const UNITS_TO_METERS: f32 = 0.01905;
@@ -268,19 +257,54 @@ impl Enhancement for PlayerESP {
         // -----------------------------------
 
         for (_entity_index, entry) in self.players.iter_mut() {
-            let pawn_info = &entry.pawn_info;
-            let pawn_model = &entry.pawn_model;
-            let interpolated_position = entry.current_position;
+            // READ ALL DATA FRESH AT RENDER TIME - DO NOT USE CACHED DATA FROM UPDATE PHASE
+            // This eliminates the 1-frame lag caused by state caching
+            
+            let pawn_handle_index = entry.pawn_handle;
+            
+            // Get the entity identity and read fresh pawn info
+            let Some(entity_identity) = entities.identity_from_index(pawn_handle_index) else { continue; };
+            let Ok(entity_ptr) = entity_identity.entity_ptr::<dyn C_BaseEntity>() else { continue; };
+            let Some(entity_ref) = entity_ptr.value_reference(memory.view_arc()) else { continue; };
+            
+            // Read position directly from the entity
+            let interpolated_position = {
+                let mut pos = Vector3::new(0.0, 0.0, 0.0);
+                if let Ok(game_scene_node) = entity_ref.m_pGameSceneNode() {
+                    if let Some(scene_node_ref) = game_scene_node.value_reference(memory.view_arc()) {
+                        if let Ok(origin) = scene_node_ref.m_vecAbsOrigin() {
+                            pos = Vector3::new(origin[0], origin[1], origin[2]);
+                        }
+                    }
+                }
+                pos
+            };
+
+            // We need to read player info - try fresh read if possible, otherwise skip
+            let pawn_info = match states.resolve::<StatePawnInfo>(EntityHandle::from_index(pawn_handle_index)) {
+                Ok(info) => {
+                    if info.player_health <= 0 || info.player_name.is_none() { continue; }
+                    info
+                }
+                Err(_) => { continue; }
+            };
 
             let distance = (interpolated_position - camera_position).norm() * UNITS_TO_METERS;
 
-            let esp_settings = match Self::resolve_esp_player_config(&settings, pawn_info, self.local_team_id) {
+            let esp_settings = match Self::resolve_esp_player_config(&settings, &pawn_info, self.local_team_id) {
                 Some(settings) => settings,
                 None => continue,
             };
 
             let player_rel_health = (pawn_info.player_health as f32 / 100.0).clamp(0.0, 1.0);
-            let Ok(entry_model) = states.resolve::<CS2Model>(pawn_model.model_address) else { continue; };
+            
+            // Get model data
+            let pawn_model_address = match states.resolve::<StatePawnModelAddress>(EntityHandle::from_index(pawn_handle_index)) {
+                Ok(addr) => addr.model_address,
+                Err(_) => { continue; }
+            };
+            
+            let Ok(entry_model) = states.resolve::<CS2Model>(pawn_model_address) else { continue; };
             
             let player_2d_box = view.calculate_box_2d(
                 &(entry_model.vhull_min + interpolated_position),
@@ -291,15 +315,9 @@ impl Enhancement for PlayerESP {
 
             // --- OFF-SCREEN ARROWS LOGIC (CLIP SPACE METHOD) ---
             if esp_settings.offscreen_arrows {
-                // Manual projection to check "Offscreen-ness" accurately
                 let vec = interpolated_position;
-                // Use the view matrix from public field
                 let clip = nalgebra::Vector4::new(vec.x, vec.y, vec.z, 1.0).transpose() * view.view_matrix;
                 
-                // Check if offscreen
-                // It is offscreen if:
-                // 1. Behind camera (w < 0.1)
-                // 2. Outside NDC bounds (abs(x) > w or abs(y) > w)
                 let is_offscreen = if clip.w < 0.1 {
                     true 
                 } else {
@@ -308,13 +326,7 @@ impl Enhancement for PlayerESP {
 
                 if is_offscreen {
                     if best_arrow.as_ref().map_or(true, |a| distance < a.dist) {
-                        // Determine Left/Right based on Clip Space X
-                        // In standard View Space (and assuming standard Projection matrix):
-                        // x < 0 is Left, x > 0 is Right.
-                        // This holds true even if w < 0 (behind), because the lateral side doesn't flip.
-                        
                         let is_left = clip.x < 0.0; 
-
                         let color = esp_settings.offscreen_arrows_color.calculate_color(player_rel_health, distance, time, 0.0);
                         
                         best_arrow = Some(ClosestArrowState {
@@ -330,27 +342,58 @@ impl Enhancement for PlayerESP {
             // ---------------------------------------------------
 
             // --- MODEL RENDERING START ---
+            // Only read bones if actually needed
+            let needs_bones = esp_settings.skeleton || esp_settings.chams || esp_settings.head_dot != EspHeadDot::None;
+            let pawn_bones = if needs_bones {
+                states.resolve::<StatePawnModelInfo>(EntityHandle::from_index(pawn_handle_index)).ok()
+            } else {
+                None
+            };
+
             if esp_settings.chams {
-                let model_name = "character.glb".to_string(); 
-                if !self.models.contains_key(&model_name) {
-                    match CharacterModel::load(&model_name) {
-                        Ok(model) => { self.models.insert(model_name.clone(), Some(model)); },
-                        Err(_) => { self.models.insert(model_name.clone(), None); }
+                if let Some(pawn_model) = &pawn_bones {
+                    const MODEL_NAME: &str = "character.glb";
+                    if !self.models.contains_key(MODEL_NAME) {
+                        let model_name_string = MODEL_NAME.to_string();
+                        match CharacterModel::load(MODEL_NAME) {
+                            Ok(model) => { self.models.insert(model_name_string, Some(model)); },
+                            Err(_) => { self.models.insert(model_name_string, None); }
+                        }
+                    }
+
+                    if let Some(Some(model)) = self.models.get(MODEL_NAME) {
+                        let bones_iter = entry_model.bones.iter().zip(pawn_model.bone_states.iter());
+                        for (bone, state) in bones_iter {
+                            let bone_pos = state.position;
+                            let bone_rot = nalgebra::UnitQuaternion::from_quaternion(state.rotation);
+                            let transform = Matrix4::new_translation(&bone_pos) * Matrix4::from(bone_rot);
+                            if let Some(t) = entry.bone_transforms.get_mut(&bone.name) { *t = transform; } 
+                            else { entry.bone_transforms.insert(bone.name.clone(), transform); }
+                        }
+                        let col_arr = esp_settings.chams_color.calculate_color(player_rel_health, distance, time, 0.0);
+                        model.render(&draw, &view, &entry.bone_transforms, col_arr);
+                    } else {
+                        let bones = entry_model.bones.iter().zip(pawn_model.bone_states.iter());
+                        for (bone, state) in bones {
+                            if (bone.flags & BoneFlags::FlagHitbox as u32) == 0 { continue; }
+                            let parent_index = if let Some(parent) = bone.parent { parent } else { continue; };
+                            let parent_world_pos = pawn_model.bone_states[parent_index].position;
+                            let bone_world_pos = state.position;
+                            if let (Some(parent_pos), Some(bone_pos)) = (view.world_to_screen(&parent_world_pos, true), view.world_to_screen(&bone_world_pos, true)) {
+                                let t_bone = (bone_world_pos.z - interpolated_position.z) / 72.0;
+                                let col_arr = esp_settings.chams_color.calculate_color(player_rel_health, distance, time, t_bone);
+                                let thickness_scale = 600.0; 
+                                let dist_clamped = distance.max(0.1);
+                                let thickness_mult = if bone.name.contains("spine") || bone.name.contains("pelvis") { 0.35 } else if bone.name.contains("head") { 0.30 } else { 0.15 };
+                                draw.add_line([parent_pos.x, parent_pos.y], [bone_pos.x, bone_pos.y], col_arr).thickness((thickness_scale * thickness_mult) / dist_clamped).build();
+                            }
+                        }
                     }
                 }
+            }
 
-                if let Some(Some(model)) = self.models.get(&model_name) {
-                    let bones_iter = entry_model.bones.iter().zip(pawn_model.bone_states.iter());
-                    for (bone, state) in bones_iter {
-                        let bone_pos = state.position;
-                        let bone_rot = nalgebra::UnitQuaternion::from_quaternion(state.rotation);
-                        let transform = Matrix4::new_translation(&bone_pos) * Matrix4::from(bone_rot);
-                        if let Some(t) = entry.bone_transforms.get_mut(&bone.name) { *t = transform; } 
-                        else { entry.bone_transforms.insert(bone.name.clone(), transform); }
-                    }
-                    let col_arr = esp_settings.chams_color.calculate_color(player_rel_health, distance, time, 0.0);
-                    model.render(&draw, &view, &entry.bone_transforms, col_arr);
-                } else {
+            if esp_settings.skeleton {
+                if let Some(pawn_model) = &pawn_bones {
                     let bones = entry_model.bones.iter().zip(pawn_model.bone_states.iter());
                     for (bone, state) in bones {
                         if (bone.flags & BoneFlags::FlagHitbox as u32) == 0 { continue; }
@@ -358,47 +401,31 @@ impl Enhancement for PlayerESP {
                         let parent_world_pos = pawn_model.bone_states[parent_index].position;
                         let bone_world_pos = state.position;
                         if let (Some(parent_pos), Some(bone_pos)) = (view.world_to_screen(&parent_world_pos, true), view.world_to_screen(&bone_world_pos, true)) {
-                            let t_bone = (bone_world_pos.z - entry.pawn_info.position.z) / 72.0;
-                            let col_arr = esp_settings.chams_color.calculate_color(player_rel_health, distance, time, t_bone);
-                            let thickness_scale = 600.0; 
-                            let dist_clamped = distance.max(0.1);
-                            let thickness_mult = if bone.name.contains("spine") || bone.name.contains("pelvis") { 0.35 } else if bone.name.contains("head") { 0.30 } else { 0.15 };
-                            draw.add_line([parent_pos.x, parent_pos.y], [bone_pos.x, bone_pos.y], col_arr).thickness((thickness_scale * thickness_mult) / dist_clamped).build();
+                            let t_bone = (bone_world_pos.z - interpolated_position.z) / 72.0;
+                            let col = esp_settings.skeleton_color.calculate_color(player_rel_health, distance, time, t_bone);
+                            draw.add_line([parent_pos.x, parent_pos.y], [bone_pos.x, bone_pos.y], col).thickness(esp_settings.skeleton_width).build();
                         }
                     }
                 }
             }
 
-            if esp_settings.skeleton {
-                let bones = entry_model.bones.iter().zip(pawn_model.bone_states.iter());
-                for (bone, state) in bones {
-                    if (bone.flags & BoneFlags::FlagHitbox as u32) == 0 { continue; }
-                    let parent_index = if let Some(parent) = bone.parent { parent } else { continue; };
-                    let parent_world_pos = pawn_model.bone_states[parent_index].position;
-                    let bone_world_pos = state.position;
-                    if let (Some(parent_pos), Some(bone_pos)) = (view.world_to_screen(&parent_world_pos, true), view.world_to_screen(&bone_world_pos, true)) {
-                        let t_bone = (bone_world_pos.z - entry.pawn_info.position.z) / 72.0;
-                        let col = esp_settings.skeleton_color.calculate_color(player_rel_health, distance, time, t_bone);
-                        draw.add_line([parent_pos.x, parent_pos.y], [bone_pos.x, bone_pos.y], col).thickness(esp_settings.skeleton_width).build();
-                    }
-                }
-            }
-
             if esp_settings.head_dot != EspHeadDot::None {
-                if let Some(head_bone_index) = entry_model.bones.iter().position(|bone| bone.name == "head_0") {
-                    if let Some(head_state) = pawn_model.bone_states.get(head_bone_index) {
-                        let head_base_pos = head_state.position;
-                        if let (Some(head_position), Some(head_far)) = (
-                            view.world_to_screen(&(head_base_pos + nalgebra::Vector3::new(0.0, 0.0, esp_settings.head_dot_z)), true),
-                            view.world_to_screen(&(head_base_pos + nalgebra::Vector3::new(0.0, 0.0, esp_settings.head_dot_z + 2.0)), true),
-                        ) {
-                            let color = esp_settings.head_dot_color.calculate_color(player_rel_health, distance, time, 0.0);
-                            let radius = f32::min(f32::abs(head_position.y - head_far.y), MAX_HEAD_SIZE) * esp_settings.head_dot_base_radius;
-                            let circle = draw.add_circle([head_position.x, head_position.y], radius, color);
-                            match esp_settings.head_dot {
-                                EspHeadDot::Filled => { circle.filled(true).build(); }
-                                EspHeadDot::NotFilled => { circle.filled(false).thickness(esp_settings.head_dot_thickness).build(); }
-                                EspHeadDot::None => unreachable!(),
+                if let Some(pawn_model) = &pawn_bones {
+                    if let Some(head_bone_index) = entry_model.bones.iter().position(|bone| bone.name == "head_0") {
+                        if let Some(head_state) = pawn_model.bone_states.get(head_bone_index) {
+                            let head_base_pos = head_state.position;
+                            if let (Some(head_position), Some(head_far)) = (
+                                view.world_to_screen(&(head_base_pos + nalgebra::Vector3::new(0.0, 0.0, esp_settings.head_dot_z)), true),
+                                view.world_to_screen(&(head_base_pos + nalgebra::Vector3::new(0.0, 0.0, esp_settings.head_dot_z + 2.0)), true),
+                            ) {
+                                let color = esp_settings.head_dot_color.calculate_color(player_rel_health, distance, time, 0.0);
+                                let radius = f32::min(f32::abs(head_position.y - head_far.y), MAX_HEAD_SIZE) * esp_settings.head_dot_base_radius;
+                                let circle = draw.add_circle([head_position.x, head_position.y], radius, color);
+                                match esp_settings.head_dot {
+                                    EspHeadDot::Filled => { circle.filled(true).build(); }
+                                    EspHeadDot::NotFilled => { circle.filled(false).thickness(esp_settings.head_dot_thickness).build(); }
+                                    EspHeadDot::None => unreachable!(),
+                                }
                             }
                         }
                     }
@@ -455,10 +482,6 @@ impl Enhancement for PlayerESP {
                 let mut layout_right = PlayerInfoLayout::new(ui, &draw, view.screen_bounds, vmin, vmax, esp_settings.box_type == EspBoxType::Box2D, LayoutAlignment::Right, esp_settings.text_style);
                 let mut layout_bottom = PlayerInfoLayout::new(ui, &draw, view.screen_bounds, vmin, vmax, esp_settings.box_type == EspBoxType::Box2D, LayoutAlignment::Bottom, esp_settings.text_style);
 
-                if esp_settings.info_name {
-                    layout_right.add_line(&esp_settings.info_name_color, &color_ctx, pawn_info.player_name.as_ref().map_or("unknown", String::as_str));
-                    if let Some(player_name) = &pawn_info.player_name { unicode_text.register_unicode_text(player_name); }
-                }
                 if esp_settings.info_hp_text { layout_right.add_line(&esp_settings.info_hp_text_color, &color_ctx, &format!("{} HP", pawn_info.player_health)); }
                 if esp_settings.info_flag_kit && pawn_info.player_has_defuser { layout_right.add_line(&esp_settings.info_flag_kit_color, &color_ctx, "Kit"); }
                 if esp_settings.info_flag_bomb && pawn_info.player_has_bomb { layout_right.add_line(&esp_settings.info_flag_bomb_color, &color_ctx, "Bomb Carrier"); }
@@ -476,27 +499,31 @@ impl Enhancement for PlayerESP {
                     if !player_utilities.is_empty() { layout_right.add_line(&esp_settings.info_grenades_color, &color_ctx, &player_utilities.join(", ")); }
                 }
 
+                if esp_settings.info_name {
+                    layout_bottom.add_line(&esp_settings.info_name_color, &color_ctx, pawn_info.player_name.as_ref().map_or("unknown", String::as_str));
+                    if let Some(player_name) = &pawn_info.player_name { unicode_text.register_unicode_text(player_name); }
+                }
+
                 if esp_settings.info_ammo && pawn_info.weapon_current_ammo != -1 { layout_bottom.add_line(&esp_settings.info_ammo_color, &color_ctx, &format!("{}/{}", pawn_info.weapon_current_ammo, pawn_info.weapon_reserve_ammo)); }
                 if esp_settings.info_distance { layout_bottom.add_line(&esp_settings.info_distance_color, &color_ctx, &format!("{:.0}m", distance)); }
                 
                 if esp_settings.info_weapon {
-                    let weapon_name = pawn_info.weapon.display_name();
                     match esp_settings.info_weapon_style {
                         EspInfoStyle::Text => {
-                            layout_bottom.add_line(&esp_settings.info_weapon_color, &color_ctx, weapon_name);
+                            layout_bottom.add_line(&esp_settings.info_weapon_color, &color_ctx, pawn_info.weapon.display_name());
                         }
                         EspInfoStyle::Icon => {
                             let mut icon_drawn = false;
                             if let Some(resources) = &app_resources {
-                                let icon_key = map_weapon_to_icon(weapon_name);
-                                if let Some(tex_id) = resources.weapon_icons.get(&icon_key) {
-                                    let aspect_ratio = get_weapon_icon_aspect_ratio(&icon_key);
-                                    let scale = get_weapon_icon_scale(&icon_key);
+                                let icon_key = map_weapon_to_icon(pawn_info.weapon);
+                                if let Some(tex_id) = resources.weapon_icons.get(icon_key) {
+                                    let aspect_ratio = get_weapon_icon_aspect_ratio(icon_key);
+                                    let scale = get_weapon_icon_scale(icon_key);
                                     layout_bottom.add_image(*tex_id, &esp_settings.info_weapon_color, &color_ctx, 31.5 * scale, aspect_ratio);
                                     icon_drawn = true;
                                 }
                             }
-                            if !icon_drawn { layout_bottom.add_line(&esp_settings.info_weapon_color, &color_ctx, weapon_name); }
+                            if !icon_drawn { layout_bottom.add_line(&esp_settings.info_weapon_color, &color_ctx, pawn_info.weapon.display_name()); }
                         }
                     }
                 }
@@ -525,30 +552,27 @@ impl Enhancement for PlayerESP {
             let size = arrow.size;
             
             if arrow.is_left {
-                // Draw Left Arrow
                 let arrow_x = screen_center[0] - arrow.radius; 
                 let arrow_y = center_y;
                 
-                let p1 = [arrow_x, arrow_y]; // Tip
-                let p2 = [arrow_x + size, arrow_y - size]; // Base Top
-                let p3 = [arrow_x + size, arrow_y + size]; // Base Bot
+                let p1 = [arrow_x, arrow_y];
+                let p2 = [arrow_x + size, arrow_y - size];
+                let p3 = [arrow_x + size, arrow_y + size];
 
                 draw.add_triangle(p1, p2, p3, arrow.color).filled(true).build();
                 draw.add_triangle(p1, p2, p3, [0.0, 0.0, 0.0, 1.0]).thickness(1.0).build();
             } else {
-                // Draw Right Arrow
                 let arrow_x = screen_center[0] + arrow.radius; 
                 let arrow_y = center_y;
                 
-                let p1 = [arrow_x, arrow_y]; // Tip
-                let p2 = [arrow_x - size, arrow_y - size]; // Base Top
-                let p3 = [arrow_x - size, arrow_y + size]; // Base Bot
+                let p1 = [arrow_x, arrow_y];
+                let p2 = [arrow_x - size, arrow_y - size];
+                let p3 = [arrow_x - size, arrow_y + size];
 
                 draw.add_triangle(p1, p2, p3, arrow.color).filled(true).build();
                 draw.add_triangle(p1, p2, p3, [0.0, 0.0, 0.0, 1.0]).thickness(1.0).build();
             }
         }
-        // ----------------------------------------------
 
         Ok(())
     }

@@ -46,9 +46,9 @@ pub struct IdHashEntr {
     pub value: Ptr64<()>,
 }
 
-#[raw_struct(size = 0x200)]
+#[raw_struct(size = 0x208)]
 pub struct CSchemaSystem {
-    #[field(offset = 0x188)]
+    #[field(offset = 0x190)]
     pub scopes: Copy<dyn CUtlVector<Ptr64<dyn CSchemaSystemTypeScope>>>,
 }
 
@@ -83,12 +83,12 @@ pub struct CSchemaSystemTypeScope {
 
     // #[field(offset = 0x438)]
     // pub type_declared_class_unknown: ??
-    #[field(offset = 0x440)]
+    #[field(offset = 0x470)]
     pub type_declared_class: Copy<dyn UtlRBTree<IdHashEntry>>,
 
     // #[field(offset = 0x460)]
     // pub type_declared_class_spin_lock: CThreadSpinMutex,
-    #[field(offset = 0x468)]
+    #[field(offset = 0x4A0)]
     pub type_declared_enum: Copy<dyn UtlRBTree<IdHashEntry>>,
     /* 0x500 contains A CUtlMemoryPoolBase */
     /* 0x580 contains 0x100 elements of size 0x28 */

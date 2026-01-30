@@ -73,6 +73,7 @@ pub enum Module {
     Engine,
     Schemasystem,
     Tier0,
+    Matchmaking,
 }
 
 impl Module {
@@ -82,6 +83,7 @@ impl Module {
             Module::Engine => "engine2.dll",
             Module::Schemasystem => "schemasystem.dll",
             Module::Tier0 => "tier0.dll",
+            Module::Matchmaking => "matchmaking.dll",
         }
     }
 }

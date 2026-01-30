@@ -68,6 +68,7 @@ With VAC live being enabled now, use this with caution. As always take the neces
 # Screenshots
 ![](./img/showcase_01.png)
 ![](./img/showcase_02.png)
+![](./img/showcase_03.png)
 
 # Help
 You can find help on the official LabHub Discord server:  
